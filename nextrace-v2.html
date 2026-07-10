@@ -596,10 +596,11 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function saveErrorBanner() {
     if (!state.saveError) return "";
+    var detail = lastStorageError ? ' <span style="opacity:.75">(' + lastStorageError.replace(/</g, "&lt;") + ")</span>" : "";
     if (state.storageDisabled) {
-      return '<div class="save-error-banner">' + icon("alert") + " Can't reach the server, so nothing is being saved right now — everything still works locally, but changes need a connection to sync. Check your internet connection, or reload to try again.</div>";
+      return '<div class="save-error-banner">' + icon("alert") + " Can't reach the server, so nothing is being saved right now — everything still works locally, but changes need a connection to sync. Check your internet connection, or reload to try again." + detail + "</div>";
     }
-    return '<div class="save-error-banner">' + icon("alert") + " Changes aren't saving right now — this looks like a connection issue, not a data problem. Your work is still here in this session; try reloading if it doesn't clear up.</div>";
+    return '<div class="save-error-banner">' + icon("alert") + " Changes aren't saving right now — this looks like a connection issue, not a data problem. Your work is still here in this session; try reloading if it doesn't clear up." + detail + "</div>";
   }
 
   function isSupportWorker() {
@@ -977,6 +978,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   var SUPABASE_KEY = "sb_publishable_77i-EQS3pinkR9KFaq0Fag_clh_MHGM";
 
   var storageBackend = "supabase";
+  var lastStorageError = "";
 
   var storageAdapter = {
     async get(key) {
@@ -990,11 +992,15 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
             }
           }
         );
-        if (!res.ok) throw new Error("Supabase get failed: " + res.status);
+        if (!res.ok) {
+          var bodyText = await res.text().catch(function () { return ""; });
+          throw new Error("Supabase get failed: " + res.status + " " + bodyText);
+        }
         var rows = await res.json();
         if (!rows.length) return null;
         return { key: key, value: rows[0].value };
       } catch (e) {
+        lastStorageError = "GET " + key + ": " + (e && e.message ? e.message : String(e));
         console.error("NexTrace: Supabase get failed, falling back to localStorage", e);
         try {
           var raw = localStorage.getItem(key);
@@ -1016,10 +1022,15 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
           },
           body: JSON.stringify({ key: key, value: value })
         });
-        if (!res.ok) throw new Error("Supabase set failed: " + res.status);
+        if (!res.ok) {
+          var bodyText2 = await res.text().catch(function () { return ""; });
+          throw new Error("Supabase set failed: " + res.status + " " + bodyText2);
+        }
+        lastStorageError = "";
         try { localStorage.setItem(key, value); } catch (e3) {}
         return { key: key, value: value };
       } catch (e) {
+        lastStorageError = "SET " + key + ": " + (e && e.message ? e.message : String(e));
         console.error("NexTrace: Supabase set failed, falling back to localStorage only", e);
         try {
           localStorage.setItem(key, value);
@@ -1040,11 +1051,17 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     state.loadErrors = [];
     for (var i = 1; i <= 8; i++) {
       var houseData2 = null;
+      lastStorageError = "";
       try {
         var res = await storageAdapter.get(houseStorageKey(i));
         houseData2 = res && res.value ? JSON.parse(res.value) : null;
-        console.log("NexTrace: loaded house " + i + " (" + storageBackend + " backend) — " +
-          (res && res.value ? "found saved data (" + res.value.length + " chars)" : "no saved data, using defaults"));
+        if (lastStorageError) {
+          state.loadErrors.push({ house: i, error: lastStorageError });
+          console.error("NexTrace: house " + i + " load hit an error (used localStorage fallback): " + lastStorageError);
+        } else {
+          console.log("NexTrace: loaded house " + i + " (" + storageBackend + " backend) — " +
+            (res && res.value ? "found saved data (" + res.value.length + " chars)" : "no saved data, using defaults"));
+        }
       } catch (e) {
         houseData2 = null;
         state.loadErrors.push({ house: i, error: String(e && e.message || e) });
@@ -1061,6 +1078,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     }
     if (state.loadErrors.length) {
       console.error("NexTrace: " + state.loadErrors.length + " house(s) failed to load — see above. Backend in use: " + storageBackend);
+      state.saveError = true;
+      lastStorageError = state.loadErrors[0].error;
     }
     state.loaded = true;
     render();
