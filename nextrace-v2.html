@@ -595,12 +595,9 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   }
 
   function saveErrorBanner() {
-    if (storageBackend === "memory") {
-      return '<div class="save-error-banner">' + icon("alert") + " This view can't access browser storage, so nothing will persist after you close or reload it. Try opening the file directly in a browser tab instead of a preview/embedded view.</div>";
-    }
     if (!state.saveError) return "";
     if (state.storageDisabled) {
-      return '<div class="save-error-banner">' + icon("alert") + " Storage isn't responding, so nothing is being saved right now — everything still works, but will reset if you reload. Try a different browser/device, or reload to try again.</div>";
+      return '<div class="save-error-banner">' + icon("alert") + " Can't reach the server, so nothing is being saved right now — everything still works locally, but changes need a connection to sync. Check your internet connection, or reload to try again.</div>";
     }
     return '<div class="save-error-banner">' + icon("alert") + " Changes aren't saving right now — this looks like a connection issue, not a data problem. Your work is still here in this session; try reloading if it doesn't clear up.</div>";
   }
@@ -970,40 +967,67 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   }
 
   /* ---------- storage adapter ----------
-     window.storage (Claude's artifact storage API) has been confirmed
-     broken — both get and set fail immediately with "Invalid response
-     format", regardless of shared/private mode. So localStorage is now
-     the primary backend: reliable within a single browser/device. A
-     plain in-page object is the last-resort fallback for contexts where
-     even localStorage is blocked (e.g. some sandboxed preview iframes). */
-  var memoryStore = {};
+     Primary backend: Supabase (real hosted Postgres table `app_storage`
+     with columns key/value). Talks directly to Supabase's REST API using
+     fetch, so no extra library/build step is needed.
+     Fallback: localStorage, used only if the Supabase request fails
+     (e.g. offline) — keeps the app usable, though changes made while
+     offline won't sync until Supabase is reachable again. */
+  var SUPABASE_URL = "https://czaagsdnaiwijdyrurmg.supabase.co";
+  var SUPABASE_KEY = "sb_publishable_77i-EQS3pinkR9KFaq0Fag_clh_MHGM";
 
-  var storageBackend = (function () {
-    try {
-      var testKey = "__nextrace_storage_test__";
-      localStorage.setItem(testKey, "1");
-      localStorage.removeItem(testKey);
-      return "local";
-    } catch (e) {
-      return "memory";
-    }
-  })();
+  var storageBackend = "supabase";
 
   var storageAdapter = {
     async get(key) {
-      if (storageBackend === "local") {
-        var raw = localStorage.getItem(key);
-        return raw === null ? null : { key: key, value: raw };
+      try {
+        var res = await fetch(
+          SUPABASE_URL + "/rest/v1/app_storage?key=eq." + encodeURIComponent(key) + "&select=value",
+          {
+            headers: {
+              "apikey": SUPABASE_KEY,
+              "Authorization": "Bearer " + SUPABASE_KEY
+            }
+          }
+        );
+        if (!res.ok) throw new Error("Supabase get failed: " + res.status);
+        var rows = await res.json();
+        if (!rows.length) return null;
+        return { key: key, value: rows[0].value };
+      } catch (e) {
+        console.error("NexTrace: Supabase get failed, falling back to localStorage", e);
+        try {
+          var raw = localStorage.getItem(key);
+          return raw === null ? null : { key: key, value: raw };
+        } catch (e2) {
+          return null;
+        }
       }
-      return Object.prototype.hasOwnProperty.call(memoryStore, key) ? { key: key, value: memoryStore[key] } : null;
     },
     async set(key, value) {
-      if (storageBackend === "local") {
-        localStorage.setItem(key, value);
+      try {
+        var res = await fetch(SUPABASE_URL + "/rest/v1/app_storage?on_conflict=key", {
+          method: "POST",
+          headers: {
+            "apikey": SUPABASE_KEY,
+            "Authorization": "Bearer " + SUPABASE_KEY,
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates"
+          },
+          body: JSON.stringify({ key: key, value: value })
+        });
+        if (!res.ok) throw new Error("Supabase set failed: " + res.status);
+        try { localStorage.setItem(key, value); } catch (e3) {}
         return { key: key, value: value };
+      } catch (e) {
+        console.error("NexTrace: Supabase set failed, falling back to localStorage only", e);
+        try {
+          localStorage.setItem(key, value);
+          return { key: key, value: value };
+        } catch (e2) {
+          throw e;
+        }
       }
-      memoryStore[key] = value;
-      return { key: key, value: value };
     }
   };
 
