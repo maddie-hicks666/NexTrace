@@ -1953,19 +1953,48 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       .slice().sort(function (a, b) { return (b.arrivedAt || b.orderedAt || "").localeCompare(a.arrivedAt || a.orderedAt || ""); }).slice(0, 15);
 
     if (state.modal.adding) {
+      var formType = state.modal.formItemType || "consumable";
+      var formLinkMode = state.modal.formLinkMode || "existing";
+      var existingItems = formType === "consumable" ? h.consumables : h.equipment;
+      var existingItemOptions = existingItems.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).map(function (it) {
+        return '<option value="' + it.id + '">' + esc(it.name) + (it.variant ? " — " + esc(it.variant) : "") + " (" + esc(it.client) + ")</option>";
+      }).join("");
+
+      var linkFields = "";
+      if (formLinkMode === "existing") {
+        linkFields = existingItems.length
+          ? '<label class="field"><span>Which ' + (formType === "consumable" ? "consumable" : "equipment item") + ' *</span><select name="existingItemId"><option value="">Select item</option>' + existingItemOptions + "</select></label>"
+          : '<p class="muted">No ' + (formType === "consumable" ? "consumables" : "equipment") + ' recorded in this house yet — choose "New item" instead.</p>';
+      } else {
+        linkFields =
+          '<label class="field"><span>Item name *</span><input name="newItemLabel" placeholder="' + (formType === "consumable" ? "e.g. Overnight pads" : "e.g. Hoist sling") + '" /></label>' +
+          '<label class="field"><span>Client *</span><select name="newItemClient"><option value="">Select client</option>' + clientOptions() + "</select></label>" +
+          (formType === "consumable"
+            ? '<label class="field"><span>Category</span><select name="newItemCategory">' + consumableCategoryOptions("Pads") + "</select></label>" +
+              '<label class="field"><span>Unit</span><select name="newItemUnit">' + consumableUnitOptions("pack") + "</select></label>"
+            : '<label class="field"><span>NDIS reference</span><input name="newItemNdisRef" /></label>');
+      }
+
       var body =
         modalError() +
         '<div id="addOrderForm" class="stack">' +
         '<div class="form-grid">' +
-        '<label class="field"><span>Item type *</span><select name="itemType">' +
-        '<option value="consumable"' + (typeFilter === "equipment" ? "" : " selected") + ">Consumable</option>" +
-        '<option value="equipment"' + (typeFilter === "equipment" ? " selected" : "") + ">Equipment</option>" +
+        '<label class="field"><span>Item type *</span><select name="itemType" data-input="orderFormItemType">' +
+        '<option value="consumable"' + (formType === "consumable" ? " selected" : "") + ">Consumable</option>" +
+        '<option value="equipment"' + (formType === "equipment" ? " selected" : "") + ">Equipment</option>" +
         "</select></label>" +
-        '<label class="field"><span>Item / description *</span><input name="itemLabel" placeholder="e.g. Overnight pads, Large" /></label>' +
-        '<label class="field"><span>Quantity (optional)</span><input name="quantity" type="number" min="0" step="any" /></label>' +
+        '<label class="field"><span>Item source *</span><select name="linkMode" data-input="orderFormLinkMode">' +
+        '<option value="existing"' + (formLinkMode === "existing" ? " selected" : "") + ">Already have this item — reorder / restock</option>" +
+        '<option value="new"' + (formLinkMode === "new" ? " selected" : "") + ">New item, not yet in the system</option>" +
+        "</select></label>" +
+        "</div>" +
+        '<div class="form-grid">' + linkFields + "</div>" +
+        '<div class="form-grid">' +
+        '<label class="field"><span>Quantity ordered' + (formType === "consumable" ? " *" : "") + '</span><input name="quantity" type="number" min="0" step="any" /></label>' +
         '<label class="field"><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" /></label>' +
         '<label class="field"><span>Ordered by</span><input name="orderedBy" value="' + esc(state.user.displayName || "") + '" /></label>' +
         "</div>" +
+        '<p class="muted" style="margin:0">When marked arrived: reorders add straight to that item\'s stock; new items are created automatically in the ' + (formType === "consumable" ? "Consumables" : "Equipment") + " list." + "</p>" +
         '<label class="field"><span>Notes (optional)</span><textarea name="notes" rows="2" placeholder="Supplier, reference number, anything worth flagging"></textarea></label>' +
         '<button type="button" class="btn btn-primary btn-block" data-action="submit-new-order">Save order</button>' +
         '<button type="button" class="btn btn-ghost btn-block" data-action="cancel-new-order">Cancel</button>' +
@@ -1980,18 +2009,18 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         (o.expectedDeliveryDate ? " · Expected " + fmtDate(o.expectedDeliveryDate) : "") +
         (o.orderedBy ? " · Ordered by " + esc(o.orderedBy) : "") +
         (o.notes ? " · " + esc(o.notes) : "") +
+        (isPending ? " · Mark this arrived from Log Delivery (Consumables) or Add Equipment, and link this order there" : "") +
         (!isPending ? " · " + (o.status === "arrived" ? "Arrived " + fmtDate((o.arrivedAt || "").slice(0, 10)) : "Cancelled") : "") +
         "</div></div>" +
         (isPending ?
           '<div style="display:flex;gap:8px">' +
-          '<button class="btn btn-secondary btn-sm" data-action="mark-order-arrived" data-id="' + o.id + '">Mark arrived</button>' +
           '<button class="btn btn-ghost btn-sm" data-action="cancel-order" data-id="' + o.id + '">' + (state.pendingDelete === o.id ? "Confirm cancel" : "Cancel") + "</button>" +
           "</div>" : "") +
         "</div>";
     }
 
     var body =
-      '<p class="muted" style="margin-top:0">Orders track consumables and equipment that have been requested from a supplier, so it\'s clear what\'s expected and when — separate from medication repeats, which are tracked on each medication directly.</p>' +
+      '<p class="muted" style="margin-top:0">Orders track consumables and equipment that have been requested from a supplier, so it\'s clear what\'s expected and when — separate from medication repeats, which are tracked on each medication directly. To close out an order, log the delivery (Consumables) or add the equipment, and link the matching order there — stock and order status update together.</p>' +
       '<button class="btn btn-primary btn-block" data-action="new-order-form" style="margin-bottom:14px">' + icon("plus") + " New order</button>" +
       '<h2 class="section-title">Pending (' + pending.length + ")</h2>" +
       (pending.length ? pending.map(function (o) { return orderRow(o, true); }).join("") : '<p class="muted">No pending orders.</p>') +
@@ -2881,22 +2910,30 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function renderAddConsumableDeliveryModal() {
     var h = houseData();
-    if (!h.consumables.length) {
+    var pendingOrders = h.orders.filter(function (o) { return o.status === "pending" && o.itemType === "consumable"; });
+    if (!h.consumables.length && !pendingOrders.length) {
       return modalWrap("Log delivery", '<p class="muted">Add a consumable first before logging a delivery.</p><button class="btn btn-primary" data-action="open-modal" data-modal="addConsumable">Add consumable</button>');
     }
-    var pendingOrders = h.orders.filter(function (o) { return o.status === "pending" && o.itemType === "consumable"; });
+    var selectedOrderId = state.modal.linkedOrderId || "";
+    var selectedOrder = pendingOrders.find(function (o) { return o.id === selectedOrderId; });
+    var isNewItemOrder = !!(selectedOrder && selectedOrder.linkMode === "new");
+
+    var itemField = isNewItemOrder
+      ? '<p class="muted">This delivery will create <strong>' + esc(selectedOrder.itemLabel) + "</strong> for " + esc(selectedOrder.newItemClient) + " as a new consumable.</p>"
+      : '<label class="field"><span>Consumable *</span><select name="itemId">' + (h.consumables.length ? consumableOptions() : '<option value="">No consumables recorded yet</option>') + "</select></label>";
+
     var body =
       modalError() +
       '<div id="addConsumableDeliveryForm" class="stack">' +
-      '<label class="field"><span>Consumable *</span><select name="itemId">' + consumableOptions() + "</select></label>" +
+      (pendingOrders.length ?
+        '<label class="field"><span>This delivers a pending order (optional)</span><select name="linkedOrderId" data-input="deliveryLinkedOrder"><option value="">Not linked to an order</option>' +
+        pendingOrders.map(function (o) { return '<option value="' + o.id + '"' + (selectedOrderId === o.id ? " selected" : "") + ">" + esc(o.itemLabel) + (o.expectedDeliveryDate ? " — expected " + fmtDate(o.expectedDeliveryDate) : "") + "</option>"; }).join("") +
+        "</select></label>" : "") +
+      itemField +
       '<div class="form-grid">' +
       '<label class="field"><span>Quantity received *</span><input name="quantity" type="number" min="0" step="any" /></label>' +
       '<label class="field"><span>Delivery date *</span><input name="deliveryDate" type="date" value="' + todayISO() + '" /></label>' +
       "</div>" +
-      (pendingOrders.length ?
-        '<label class="field"><span>This delivers a pending order (optional)</span><select name="linkedOrderId"><option value="">Not linked to an order</option>' +
-        pendingOrders.map(function (o) { return '<option value="' + o.id + '">' + esc(o.itemLabel) + (o.expectedDeliveryDate ? " — expected " + fmtDate(o.expectedDeliveryDate) : "") + "</option>"; }).join("") +
-        "</select></label>" : "") +
       '<label class="field"><span>Notes (optional)</span><textarea name="notes" rows="2" placeholder="e.g. delivered by driver, partial delivery, packaging condition"></textarea></label>' +
       '<button type="button" class="btn btn-primary btn-block" data-action="submit-add-consumable-delivery">Log delivery</button>' +
       "</div>";
@@ -2941,9 +2978,14 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (!h.clients.length) {
       return modalWrap("Add equipment", '<p class="muted">Add a client first so this equipment can be assigned to them.</p><button class="btn btn-primary" data-action="open-modal" data-modal="addClient">' + icon("plus") + " Add client</button>");
     }
+    var pendingNewEqOrders = h.orders.filter(function (o) { return o.status === "pending" && o.itemType === "equipment" && o.linkMode === "new"; });
     var body =
       modalError() +
       '<div id="addEquipmentForm" class="stack">' +
+      (pendingNewEqOrders.length ?
+        '<label class="field"><span>This is arriving from a pending order (optional)</span><select name="linkedOrderId"><option value="">Not linked to an order</option>' +
+        pendingNewEqOrders.map(function (o) { return '<option value="' + o.id + '">' + esc(o.itemLabel) + (o.expectedDeliveryDate ? " — expected " + fmtDate(o.expectedDeliveryDate) : "") + "</option>"; }).join("") +
+        "</select></label>" : "") +
       '<div class="form-grid">' +
       '<label class="field"><span>Client *</span><select name="client"><option value="">Select client</option>' + clientOptions() + "</select></label>" +
       '<label class="field"><span>Equipment name *</span><input name="name" placeholder="e.g. Manual wheelchair" /></label>' +
@@ -3005,8 +3047,16 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     } else {
       var col = equipmentStatusColor(eq.status);
       var hist = (eq.history || []).slice().reverse();
+      var pendingPartOrders = h.orders.filter(function (o) { return o.status === "pending" && o.itemType === "equipment" && o.linkMode === "existing" && o.existingItemId === eq.id; });
       body =
         '<div class="detail-top">' + pill(col, eq.status) + "</div>" +
+        (pendingPartOrders.length ?
+          '<div class="detail-section"><span class="detail-label">Pending order</span>' +
+          pendingPartOrders.map(function (o) {
+            return '<div class="mini-row">' + esc(o.itemLabel) + (o.expectedDeliveryDate ? " — expected " + fmtDate(o.expectedDeliveryDate) : "") +
+              ' <button class="btn btn-secondary btn-sm" style="margin-left:8px" data-action="mark-equipment-order-received" data-id="' + o.id + '">Mark received</button></div>';
+          }).join("") +
+          "</div>" : "") +
         '<div class="detail-grid">' +
         '<div><span class="detail-label">Client</span><div>' + esc(eq.client) + "</div></div>" +
         '<div><span class="detail-label">NDIS reference</span><div>' + esc(eq.ndisReference || "Not specified") + "</div></div>" +
@@ -3682,6 +3732,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       case "new-order-form":
         if (isSupportWorker()) break;
         state.modal.adding = true;
+        state.modal.formItemType = state.modal.orderType === "equipment" ? "equipment" : "consumable";
+        state.modal.formLinkMode = "existing";
         state.modalError = "";
         render();
         break;
@@ -3694,15 +3746,16 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         if (isSupportWorker()) break;
         doSubmitNewOrder();
         break;
-      case "mark-order-arrived":
-        var arriveId = el.getAttribute("data-id");
+      case "mark-equipment-order-received":
+        var partOrderId = el.getAttribute("data-id");
         mutate(function () {
           var h = houseData();
-          var ord = h.orders.find(function (o) { return o.id === arriveId; });
+          var ord = h.orders.find(function (o) { return o.id === partOrderId; });
           if (!ord || ord.status !== "pending") return;
           ord.status = "arrived";
           ord.arrivedAt = new Date().toISOString();
-          addAudit(state.houseId, "Order arrived", ord.itemLabel + " (" + (ord.itemType === "consumable" ? "consumable" : "equipment") + ") marked arrived.");
+          var eqItem = h.equipment.find(function (e) { return e.id === ord.existingItemId; });
+          addAudit(state.houseId, "Order arrived", ord.itemLabel + (eqItem ? " (" + eqItem.client + ")" : "") + " — ordered part/item received.");
         });
         render();
         break;
@@ -4051,6 +4104,9 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     else if (key === "equipmentFilter") { state.equipmentFilter = t.value; render(); }
     else if (key === "cosClientKey") { state.cosClientKey = t.value; render(); }
     else if (key === "allHousesSort") { state.allHousesSort = t.value; render(); }
+    else if (key === "orderFormItemType") { state.modal.formItemType = t.value; render(); }
+    else if (key === "orderFormLinkMode") { state.modal.formLinkMode = t.value; render(); }
+    else if (key === "deliveryLinkedOrder") { state.modal.linkedOrderId = t.value; render(); }
     else if (key === "repeatAttachment") {
       var file = t.files && t.files[0];
       if (!file) { state.pendingRepeatAttachment = null; return; }
@@ -4591,10 +4647,52 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     render();
   }
 
+  // Closes out a pending consumable order when its delivery is logged.
+  // Returns the consumable item the delivery should apply to (existing or newly created).
+  function resolveConsumableOrderOnDelivery(h, ord, qty, deliveryDate) {
+    ord.status = "arrived";
+    ord.arrivedAt = new Date().toISOString();
+    if (ord.linkMode === "existing" && ord.existingItemId) {
+      return h.consumables.find(function (c) { return c.id === ord.existingItemId; }) || null;
+    }
+    var newCon = {
+      id: uid("con"), client: ord.newItemClient, category: ord.newItemCategory || "Other", name: ord.itemLabel,
+      variant: "", unit: ord.newItemUnit || "pack", stock: 0, stockAsOfDate: deliveryDate || todayISO(),
+      initialEstimatedMonthlyUsage: 0, notes: ord.notes || "", stocktakeLog: [], createdAt: new Date().toISOString()
+    };
+    h.consumables.push(newCon);
+    addAudit(state.houseId, "Consumable added", newCon.name + " (" + newCon.client + ") added to register from an arrived order. Set an estimated monthly usage on this item so stock forecasting works correctly.");
+    return newCon;
+  }
+
   function doSubmitNewOrder() {
     var v = getFormValues("addOrderForm");
-    if (!v.itemLabel || !v.itemLabel.trim() || !v.itemType) {
-      state.modalError = "Please enter what was ordered and choose a type.";
+    var linkMode = v.linkMode === "new" ? "new" : "existing";
+    var itemLabel = "";
+    if (linkMode === "existing") {
+      if (!v.existingItemId) {
+        state.modalError = "Please select which item this order is for.";
+        render();
+        return;
+      }
+      var h0 = houseData();
+      var existing = (v.itemType === "consumable" ? h0.consumables : h0.equipment).find(function (it) { return it.id === v.existingItemId; });
+      if (!existing) {
+        state.modalError = "That item couldn't be found — please reselect it.";
+        render();
+        return;
+      }
+      itemLabel = existing.name + (existing.variant ? " — " + existing.variant : "");
+    } else {
+      if (!v.newItemLabel || !v.newItemLabel.trim() || !v.newItemClient) {
+        state.modalError = "Please enter the new item's name and client.";
+        render();
+        return;
+      }
+      itemLabel = v.newItemLabel.trim();
+    }
+    if (v.itemType === "consumable" && (!v.quantity || Number(v.quantity) <= 0)) {
+      state.modalError = "Please enter a quantity for this consumable order.";
       render();
       return;
     }
@@ -4603,7 +4701,13 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       var order = {
         id: uid("ord"),
         itemType: v.itemType,
-        itemLabel: v.itemLabel.trim(),
+        itemLabel: itemLabel,
+        linkMode: linkMode,
+        existingItemId: linkMode === "existing" ? v.existingItemId : "",
+        newItemClient: linkMode === "new" ? v.newItemClient : "",
+        newItemCategory: linkMode === "new" ? (v.newItemCategory || "Other") : "",
+        newItemUnit: linkMode === "new" ? (v.newItemUnit || "pack") : "",
+        newItemNdisRef: linkMode === "new" ? (v.newItemNdisRef || "") : "",
         quantity: v.quantity ? Number(v.quantity) : null,
         expectedDeliveryDate: v.expectedDeliveryDate || "",
         orderedBy: (v.orderedBy || "").trim() || state.user.displayName || "",
@@ -4622,17 +4726,35 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function doSubmitAddConsumableDelivery() {
     var v = getFormValues("addConsumableDeliveryForm");
-    if (!v.itemId || !v.quantity || Number(v.quantity) <= 0 || !v.deliveryDate) {
-      state.modalError = "Please choose a consumable, a quantity greater than 0, and a delivery date.";
+    var linkedOrder = v.linkedOrderId ? houseData().orders.find(function (o) { return o.id === v.linkedOrderId && o.status === "pending"; }) : null;
+    var isNewItemOrder = !!(linkedOrder && linkedOrder.linkMode === "new");
+
+    if (!isNewItemOrder && !v.itemId) {
+      state.modalError = "Please choose a consumable.";
+      render();
+      return;
+    }
+    if (!v.quantity || Number(v.quantity) <= 0 || !v.deliveryDate) {
+      state.modalError = "Please enter a quantity greater than 0 and a delivery date.";
       render();
       return;
     }
     mutate(function () {
       var h = houseData();
-      var item = h.consumables.find(function (c) { return c.id === v.itemId; });
-      if (!item) return;
       var qty = Number(v.quantity) || 0;
       var noteText = (v.notes || "").trim();
+      var item;
+      if (linkedOrder) {
+        item = resolveConsumableOrderOnDelivery(h, linkedOrder, qty, v.deliveryDate);
+        if (!isNewItemOrder) {
+          // existing-item order: staff still picks the actual consumable from the dropdown
+          item = h.consumables.find(function (c) { return c.id === v.itemId; }) || item;
+        }
+        addAudit(state.houseId, "Order arrived", "Order for " + linkedOrder.itemLabel + " marked arrived (delivery logged).");
+      } else {
+        item = h.consumables.find(function (c) { return c.id === v.itemId; });
+      }
+      if (!item) return;
       h.consumableDeliveries.push({
         id: uid("cdel"),
         itemId: item.id,
@@ -4647,14 +4769,6 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       item.stock = currentConsumableStock(item) + qty;
       item.stockAsOfDate = v.deliveryDate || todayISO();
       addAudit(state.houseId, "Consumable delivery received", "+" + qty + " " + item.unit + " of " + item.name + " (" + item.client + ") received." + (noteText ? " Note: " + noteText : ""));
-      if (v.linkedOrderId) {
-        var ord = h.orders.find(function (o) { return o.id === v.linkedOrderId; });
-        if (ord && ord.status === "pending") {
-          ord.status = "arrived";
-          ord.arrivedAt = new Date().toISOString();
-          addAudit(state.houseId, "Order arrived", "Order for " + ord.itemLabel + " marked arrived (delivery logged).");
-        }
-      }
     });
     state.modal = null;
     state.modalError = "";
@@ -4752,6 +4866,15 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       };
       houseData().equipment.push(eq);
       addAudit(state.houseId, "Equipment added", eq.name + " (" + eq.client + ") added — status: " + eq.status + ".");
+      if (v.linkedOrderId) {
+        var h = houseData();
+        var ord = h.orders.find(function (o) { return o.id === v.linkedOrderId && o.status === "pending"; });
+        if (ord) {
+          ord.status = "arrived";
+          ord.arrivedAt = new Date().toISOString();
+          addAudit(state.houseId, "Order arrived", "Order for " + ord.itemLabel + " marked arrived (equipment added).");
+        }
+      }
     });
     state.modal = null;
     state.modalError = "";
