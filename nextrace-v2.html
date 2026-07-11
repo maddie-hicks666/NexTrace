@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>NexTrace — SIL House Support Register</title>
 <style>
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+[data-action]:focus-visible, .modal-box:focus-visible {
+  outline: 3px solid #1D5F8A;
+  outline-offset: 2px;
+}
 :root {
   --bg: #F3F6F7;
   --surface: #FFFFFF;
@@ -617,6 +630,10 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function isClinical() {
     return !!(state.user && state.user.role === "Clinical");
+  }
+
+  function isAdmin() {
+    return !!(state.user && state.user.role === "Admin");
   }
 
   function allowedTabs() {
@@ -1261,7 +1278,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   }
 
   function statusDot(status) {
-    return '<span class="dot dot-' + status + '"></span>';
+    return '<span class="dot dot-' + status + '"></span><span class="sr-only">' + statusLabel(status) + "</span>";
   }
 
   function pill(status, text) {
@@ -1270,25 +1287,25 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function icon(name) {
     var icons = {
-      pill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.5 20.5 3.5 13.5a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7Z"/><path d="M8 8l8 8"/></svg>',
-      truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 7h11v9H2z"/><path d="M13 10h4l4 3.5V16h-8z"/><circle cx="6" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>',
-      repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2 21 6l-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
-      log: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/></svg>',
-      alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.5 18a1.7 1.7 0 0 0 1.5 2.5h16a1.7 1.7 0 0 0 1.5-2.5L13.7 3.9a1.7 1.7 0 0 0-3.4 0Z"/></svg>',
-      house: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg>',
-      logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
-      plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
-      search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
-      flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 21V4"/><path d="M5 4h13l-3 4 3 4H5"/></svg>',
-      close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>',
-      lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
-      pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-      grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>',
-      sort: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4v16M7 4 3 8M7 4l4 4"/><path d="M17 20V4M17 20l4-4M17 20l-4-4"/></svg>',
-      clipboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6M9 19h3"/></svg>',
-      user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.4-3.6 4.4-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>',
-      box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
-      wrench: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6Z"/></svg>'
+      pill: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.5 20.5 3.5 13.5a5 5 0 0 1 7-7l7 7a5 5 0 0 1-7 7Z"/><path d="M8 8l8 8"/></svg>',
+      truck: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 7h11v9H2z"/><path d="M13 10h4l4 3.5V16h-8z"/><circle cx="6" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg>',
+      repeat: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2 21 6l-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22 3 18l4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>',
+      log: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/></svg>',
+      alert: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 2.5 18a1.7 1.7 0 0 0 1.5 2.5h16a1.7 1.7 0 0 0 1.5-2.5L13.7 3.9a1.7 1.7 0 0 0-3.4 0Z"/></svg>',
+      house: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg>',
+      logout: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
+      plus: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+      search: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+      flag: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 21V4"/><path d="M5 4h13l-3 4 3 4H5"/></svg>',
+      close: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      lock: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+      pencil: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+      grid: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>',
+      sort: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4v16M7 4 3 8M7 4l4 4"/><path d="M17 20V4M17 20l4-4M17 20l-4-4"/></svg>',
+      clipboard: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 11h6M9 15h6M9 19h3"/></svg>',
+      user: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.4-3.6 4.4-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>',
+      box: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8l9-5 9 5-9 5-9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+      wrench: '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6Z"/></svg>'
     };
     return icons[name] || "";
   }
@@ -1398,7 +1415,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       cards += '<div class="house-card ' + (allowed ? "" : "house-locked") + '"' + cardStyle + " " +
         (allowed ? 'data-action="select-house" data-house="' + i + '"' : "") + '>' +
         '<div class="house-card-top"><span class="house-icon"' + iconStyle + '>' + icon("house") + '</span><span class="house-title">' + esc(houseLabel(i)) + "</span>" +
-        (allowed && !isSupportWorker() ? '<button class="icon-btn" data-action="open-rename-house" data-house="' + i + '" title="Rename house">' + icon("pencil") + "</button>" : "") +
+        (allowed && !isSupportWorker() ? '<button class="icon-btn" data-action="open-rename-house" data-house="' + i + '" title="Rename house" aria-label="Rename ' + esc(houseLabel(i)) + '">' + icon("pencil") + "</button>" : "") +
         (allowed ? "" : '<span class="lock-icon">' + icon("lock") + "</span>") +
         "</div>" +
         (allowed ? '<div class="house-sub-label">House ' + i + "</div>" : "") +
@@ -2204,12 +2221,34 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       }
     }
 
+    var deleteSection = "";
+    if (isAdmin()) {
+      if (state.modal.deletingData) {
+        deleteSection =
+          '<div class="section-divider"></div>' +
+          '<h2 class="section-title" style="color:#B02A2A">Permanently delete this client\'s data</h2>' +
+          '<p class="muted" style="margin-top:0">This permanently removes ' + esc(client.name) + "'s client record, medications, consumables, equipment, delivery history, repeats and discrepancies from this system. This cannot be undone — it is not the same as archiving. Use this for a formal data deletion request, not for a client simply leaving the house (use \"Move to another house\" for that)." + "</p>" +
+          '<p class="muted">Type <strong>' + esc(client.name) + '</strong> below to confirm.</p>' +
+          '<div class="form-grid">' +
+          '<label class="field"><span>Client name</span><input id="deleteClientConfirmName" placeholder="' + esc(client.name) + '" /></label>' +
+          "</div>" +
+          '<button type="button" class="btn btn-danger btn-block" data-action="confirm-delete-client-data" data-id="' + client.id + '" data-name="' + esc(client.name) + '">Permanently delete all data</button>' +
+          '<button type="button" class="btn btn-ghost btn-block" data-action="cancel-delete-client-data">Cancel</button>';
+      } else {
+        deleteSection =
+          '<div class="section-divider"></div>' +
+          '<button class="btn btn-ghost btn-block" style="color:#B02A2A" data-action="start-delete-client-data">Permanently delete this client\'s data</button>';
+      }
+    }
+
     var body =
+      modalError() +
       '<div class="detail-section"><span class="detail-label">Medications</span>' + medsHtml + "</div>" +
       (isClinical() ? "" :
         '<div class="detail-section"><span class="detail-label">Consumables</span>' + consHtml + "</div>" +
         '<div class="detail-section"><span class="detail-label">Equipment</span>' + eqHtml + "</div>") +
-      moveSection;
+      moveSection +
+      deleteSection;
     return modalWrap(esc(client.name), body);
   }
 
@@ -2657,8 +2696,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   function modalWrap(title, bodyHtml, formId) {
     return (
       '<div class="modal-overlay" data-action="close-modal-bg">' +
-      '<div class="modal-box" data-stop="1">' +
-      '<div class="modal-head"><h2>' + title + '</h2><button class="icon-btn" data-action="close-modal">' + icon("close") + "</button></div>" +
+      '<div class="modal-box" data-stop="1" role="dialog" aria-modal="true" aria-label="' + esc(typeof title === "string" ? title.replace(/<[^>]*>/g, "") : "") + '" tabindex="-1">' +
+      '<div class="modal-head"><h2>' + title + '</h2><button class="icon-btn" data-action="close-modal" aria-label="Close dialog">' + icon("close") + "</button></div>" +
       '<div class="modal-body">' + bodyHtml + "</div>" +
       "</div>" +
       "</div>"
@@ -3679,7 +3718,9 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         state.tab = "dashboard";
         state.viewingAllHouses = false;
         state.viewingOpsOverview = false;
+        addAudit(state.houseId, "House accessed", (state.user.displayName || state.user.email) + " (" + state.user.role + ") opened this house's records.");
         render();
+        saveHouse(state.houseId);
         break;
       case "switch-house":
         state.houseId = null;
@@ -4052,6 +4093,27 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         var targetHouseId = moveSelectEl ? Number(moveSelectEl.value) : null;
         if (!targetHouseId || state.user.houses.indexOf(targetHouseId) === -1) break;
         doMoveClient(moveClientId, targetHouseId);
+        break;
+      case "start-delete-client-data":
+        if (!isAdmin()) break;
+        state.modal.deletingData = true;
+        render();
+        break;
+      case "cancel-delete-client-data":
+        state.modal.deletingData = false;
+        render();
+        break;
+      case "confirm-delete-client-data":
+        if (!isAdmin()) break;
+        var delClientId = el.getAttribute("data-id");
+        var delClientName = el.getAttribute("data-name");
+        var confirmInput = document.getElementById("deleteClientConfirmName");
+        if (!confirmInput || confirmInput.value.trim() !== delClientName) {
+          state.modalError = "Type the client's name exactly to confirm this permanent deletion.";
+          render();
+          break;
+        }
+        doPermanentlyDeleteClient(delClientId);
         break;
       case "load-sample":
         mutate(function () { loadSampleData(); });
@@ -4753,6 +4815,36 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     await saveHouse(targetHouseId);
   }
 
+  async function doPermanentlyDeleteClient(clientId) {
+    var h = houseData();
+    var client = h.clients.find(function (c) { return c.id === clientId; });
+    if (!client) return;
+    var name = client.name;
+    var medCount = h.meds.filter(function (m) { return m.client === name; }).length;
+    var conCount = h.consumables.filter(function (c) { return c.client === name; }).length;
+    var eqCount = h.equipment.filter(function (e) { return e.client === name; }).length;
+
+    h.clients = h.clients.filter(function (c) { return c.id !== clientId; });
+    h.meds = h.meds.filter(function (m) { return m.client !== name; });
+    h.deliveries = h.deliveries.filter(function (d) { return d.client !== name; });
+    h.repeats = h.repeats.filter(function (r) { return r.client !== name; });
+    h.discrepancies = h.discrepancies.filter(function (d) { return d.client !== name; });
+    var deletedConIds = h.consumables.filter(function (c) { return c.client === name; }).map(function (c) { return c.id; });
+    h.consumables = h.consumables.filter(function (c) { return c.client !== name; });
+    h.consumableDeliveries = h.consumableDeliveries.filter(function (d) { return deletedConIds.indexOf(d.itemId) === -1; });
+    h.equipment = h.equipment.filter(function (e) { return e.client !== name; });
+
+    // Deliberately not deleting existing audit log entries that mention this
+    // client — audit history is retained for accountability/record-keeping,
+    // and a data-deletion request is itself recorded here for traceability.
+    addAudit(state.houseId, "Client data permanently deleted", name + "'s client record, " + medCount + " medication(s), " + conCount + " consumable(s) and " + eqCount + " equipment item(s) were permanently deleted by " + (state.user.displayName || state.user.email) + " following a data deletion request.");
+
+    state.modal = null;
+    state.modalError = "";
+    render();
+    await saveHouse(state.houseId);
+  }
+
   function doSubmitAddClient() {
     var v = getFormValues("addClientForm");
     var name = (v.name || "").trim();
@@ -5251,17 +5343,43 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   };
 
   function handleKeydown(e) {
-    if (e.key !== "Enter") return;
-    if (e.target.tagName === "TEXTAREA") return; // allow newlines in textareas
-    if (e.target.tagName !== "INPUT") return;
-    var container = e.target.closest("[id]");
-    while (container && !SUBMIT_HANDLERS[container.id]) {
-      container = container.parentElement && container.parentElement.closest("[id]");
+    if (e.key === "Escape") {
+      if (state.modal) {
+        state.modal = null;
+        state.modalError = "";
+        state.pendingDelete = null;
+        render();
+      }
+      return;
     }
-    if (container && SUBMIT_HANDLERS[container.id]) {
+    if (e.key === "Enter" && e.target.tagName === "INPUT") {
+      var container = e.target.closest("[id]");
+      while (container && !SUBMIT_HANDLERS[container.id]) {
+        container = container.parentElement && container.parentElement.closest("[id]");
+      }
+      if (container && SUBMIT_HANDLERS[container.id]) {
+        e.preventDefault();
+        SUBMIT_HANDLERS[container.id]();
+        return;
+      }
+    }
+    if ((e.key === "Enter" || e.key === " ") && e.target.getAttribute && e.target.getAttribute("data-action") && e.target.tagName !== "BUTTON" && e.target.tagName !== "A" && e.target.tagName !== "INPUT" && e.target.tagName !== "SELECT" && e.target.tagName !== "TEXTAREA") {
       e.preventDefault();
-      SUBMIT_HANDLERS[container.id]();
+      e.target.click();
     }
+  }
+
+  // Makes every clickable [data-action] element keyboard-focusable and
+  // announced correctly to screen readers, without needing to hand-edit
+  // every clickable div/row in the markup individually.
+  function enhanceA11y(root) {
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll("[data-action]").forEach(function (el) {
+      var tag = el.tagName;
+      if (tag === "BUTTON" || tag === "A" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
+      if (!el.hasAttribute("role")) el.setAttribute("role", "button");
+    });
   }
 
   /* ---------- init ---------- */
@@ -5272,6 +5390,22 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     app.addEventListener("input", handleInput);
     app.addEventListener("change", handleInput);
     app.addEventListener("keydown", handleKeydown);
+
+    var lastModalSeen = null;
+    var a11yObserver = new MutationObserver(function () {
+      enhanceA11y(document.getElementById("app"));
+      var modalRootEl = document.getElementById("modalRoot");
+      enhanceA11y(modalRootEl);
+      var modalBox = modalRootEl && modalRootEl.querySelector(".modal-box");
+      if (modalBox && modalBox !== lastModalSeen) {
+        lastModalSeen = modalBox;
+        modalBox.focus();
+      } else if (!modalBox) {
+        lastModalSeen = null;
+      }
+    });
+    a11yObserver.observe(document.body, { childList: true, subtree: true });
+
     render();
 
     var saved = loadSessionFromStorage();
