@@ -699,6 +699,33 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     return tags;
   }
 
+  /* ---------- Webster Pack helpers ----------
+     A Webster Pack is a container (e.g. "Webster Pack A") that groups
+     medications supplied together by the pharmacy. Each medication keeps
+     its own script, expiry, repeats, dosage and forecasting — the pack
+     just links to them and rolls up their alerts for a quick summary. */
+  function packMeds(h, packId) {
+    return h.meds.filter(function (m) { return m.websterPackId === packId; });
+  }
+
+  function packIssueTags(h, packId) {
+    var all = [];
+    packMeds(h, packId).forEach(function (m) {
+      medIssueTags(m).forEach(function (t) {
+        all.push({ label: m.name + ": " + t.label, color: t.color, medId: m.id });
+      });
+    });
+    return all;
+  }
+
+  function packWorstColor(h, packId) {
+    var tags = packIssueTags(h, packId);
+    if (tags.some(function (t) { return t.color === "red"; })) return "red";
+    if (tags.some(function (t) { return t.color === "yellow"; })) return "yellow";
+    if (tags.some(function (t) { return t.color === "blue"; })) return "blue";
+    return "green";
+  }
+
   function repeatStatus(rep) {
     var db = daysBetween(rep.repeatExpiryDate);
     if (db === null) return "Active";
@@ -1043,7 +1070,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   };
 
   function defaultHouseData(i) {
-    return { meds: [], deliveries: [], repeats: [], audit: [], clients: [], consumables: [], consumableDeliveries: [], equipment: [], discrepancies: [], alertTasks: [], houseName: DEFAULT_HOUSE_NAMES[i] || ("House " + i) };
+    return { meds: [], deliveries: [], repeats: [], audit: [], clients: [], consumables: [], consumableDeliveries: [], equipment: [], discrepancies: [], alertTasks: [], websterPacks: [], houseName: DEFAULT_HOUSE_NAMES[i] || ("House " + i) };
   }
 
   async function loadData() {
@@ -1074,6 +1101,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       if (!state.data[i].equipment) state.data[i].equipment = [];
       if (!state.data[i].discrepancies) state.data[i].discrepancies = [];
       if (!state.data[i].alertTasks) state.data[i].alertTasks = [];
+      if (!state.data[i].websterPacks) state.data[i].websterPacks = [];
       if (!state.data[i].houseName) state.data[i].houseName = DEFAULT_HOUSE_NAMES[i] || ("House " + i);
     }
     if (state.loadErrors.length) {
@@ -1754,10 +1782,11 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       var st = medStatus(m);
       var dl = medDaysLeft(m);
       var due = recurringIsDue(m);
+      var pack = m.websterPackId ? houseData().websterPacks.find(function (p) { return p.id === m.websterPackId; }) : null;
       return '<div class="med-row">' +
         '<div class="med-row-main" data-action="open-med-detail" data-id="' + m.id + '" style="cursor:pointer">' +
         statusDot(st) +
-        '<div><div class="med-name">' + esc(m.name) + (due ? ' <span class="audit-badge badge-blue">Delivery due</span>' : "") + '</div><div class="med-sub">' + esc(m.client) + " · " + esc(m.type) + (m.route ? " · " + esc(m.route) : "") + (st === "ceased" ? " · Ceased " + fmtDate(m.ceaseDate) : "") + "</div></div>" +
+        '<div><div class="med-name">' + esc(m.name) + (due ? ' <span class="audit-badge badge-blue">Delivery due</span>' : "") + (pack ? ' <span class="audit-badge">' + esc(pack.name) + "</span>" : "") + '</div><div class="med-sub">' + esc(m.client) + " · " + esc(m.type) + (m.route ? " · " + esc(m.route) : "") + (st === "ceased" ? " · Ceased " + fmtDate(m.ceaseDate) : "") + "</div></div>" +
         "</div>" +
         '<div class="med-row-stats">' +
         '<div class="stat"><span class="stat-label">Stock</span><span class="stat-val">' + currentMedStock(m) + " " + esc(m.unit) + "</span></div>" +
@@ -1795,9 +1824,66 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       "</select>" +
       "</div>" +
       '<div class="med-list">' + rows + empty + "</div>" +
+      renderWebsterPackSection() +
       renderMedDeliveriesSection() +
       renderMedRepeatsSection()
     );
+  }
+
+  function renderWebsterPackSection() {
+    var h = houseData();
+    var packs = h.websterPacks.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var cards = packs.map(function (p) {
+      var meds = packMeds(h, p.id);
+      var issues = packIssueTags(h, p.id);
+      var color = packWorstColor(h, p.id);
+      return '<div class="row-card" data-action="open-pack-detail" data-id="' + p.id + '" style="cursor:pointer">' +
+        statusDot(color === "blue" ? "yellow" : color) +
+        '<div style="flex:1"><div class="row-title">' + esc(p.name) + '</div><div class="row-sub">' + meds.length + " medication" + (meds.length === 1 ? "" : "s") +
+        (issues.length ? " · " + issues.length + " issue" + (issues.length === 1 ? "" : "s") + " flagged" : " · No issues") + "</div></div>" +
+        '<button class="btn btn-ghost btn-sm" data-action="open-pack-detail" data-id="' + p.id + '">View</button>' +
+        "</div>";
+    }).join("");
+    return (
+      '<div class="section-divider"></div>' +
+      '<div class="page-head-row"><h2 class="section-title" style="margin:0">Webster Packs</h2>' +
+      '<button class="btn btn-secondary btn-sm" data-action="new-webster-pack">' + icon("plus") + " New Webster Pack</button></div>" +
+      (packs.length ? '<div class="med-list">' + cards + "</div>" : '<p class="muted">No Webster Packs set up for ' + esc(houseLabel(state.houseId)) + " yet. A Webster Pack groups medications that are supplied together, while still tracking each medication's own script, expiry and repeats.</p>")
+    );
+  }
+
+  function renderPackDetailModal() {
+    var h = houseData();
+    var pack = h.websterPacks.find(function (p) { return p.id === state.modal.packId; });
+    if (!pack) return "";
+    var meds = packMeds(h, pack.id);
+    var unassigned = h.meds.filter(function (m) { return !m.websterPackId; });
+    var medRows = meds.map(function (m) {
+      var tags = medIssueTags(m);
+      return '<div class="row-card">' +
+        statusDot(medStatus(m)) +
+        '<div style="flex:1" data-action="open-med-detail" data-id="' + m.id + '" style="cursor:pointer">' +
+        '<div class="row-title">' + esc(m.name) + '</div><div class="row-sub">' + esc(m.client) +
+        (tags.length ? " · " + tags.map(function (t) { return esc(t.label); }).join(", ") : " · No issues") + "</div></div>" +
+        '<button class="btn btn-ghost btn-sm" data-action="unassign-pack-med" data-id="' + m.id + '">Remove from pack</button>' +
+        "</div>";
+    }).join("");
+    var assignRow = unassigned.length ?
+      '<div class="form-grid" style="margin-top:14px">' +
+      '<label class="field"><span>Add an existing medication to this pack</span><select id="packAssignSelect">' +
+      '<option value="">Select medication</option>' +
+      unassigned.map(function (m) { return '<option value="' + m.id + '">' + esc(m.name) + " (" + esc(m.client) + ")</option>"; }).join("") +
+      "</select></label>" +
+      '<button type="button" class="btn btn-secondary" data-action="assign-pack-med" data-pack-id="' + pack.id + '" style="align-self:end">Add to pack</button>' +
+      "</div>" :
+      '<p class="muted" style="margin-top:14px">All medications in this house are already assigned to a pack.</p>';
+    var body =
+      '<p class="muted" style="margin-top:0">' + meds.length + " medication" + (meds.length === 1 ? "" : "s") + " linked to this pack. Each keeps its own script, expiry, repeats and dosage — this view just rolls up their alerts." + "</p>" +
+      (meds.length ? medRows : '<p class="muted">No medications linked yet.</p>') +
+      assignRow +
+      '<div class="section-divider"></div>' +
+      '<button class="btn btn-ghost" data-action="delete-webster-pack" data-id="' + pack.id + '">' + (state.pendingDelete === pack.id ? "Confirm delete pack" : "Delete this Webster Pack") + "</button>";
+    return modalWrap(pack.name, body);
   }
 
   /* ---------- clients ---------- */
@@ -1887,6 +1973,16 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     }
     html += names.map(function (n) {
       return '<option value="' + esc(n) + '"' + (selected === n ? " selected" : "") + ">" + esc(n) + "</option>";
+    }).join("");
+    return html;
+  }
+
+  function packOptions(selectedId) {
+    var h = houseData();
+    var packs = h.websterPacks.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var html = '<option value=""' + (!selectedId ? " selected" : "") + ">Not in a Webster Pack</option>";
+    html += packs.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (selectedId === p.id ? " selected" : "") + ">" + esc(p.name) + "</option>";
     }).join("");
     return html;
   }
@@ -2321,6 +2417,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (mod.type === "exportMeds") return renderExportMedsModal();
     if (mod.type === "clientDetail") return renderClientDetailModal();
     if (mod.type === "serviceLog") return renderServiceLogModal();
+    if (mod.type === "packDetail") return renderPackDetailModal();
     return "";
   }
 
@@ -2346,6 +2443,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<label class="field"><span>Cease date (if stopped)</span><input name="ceaseDate" type="date" /></label>' +
       '<label class="field"><span>Reorder lead time (days)</span><input name="reorderLeadDays" type="number" min="1" step="1" placeholder="Default: 7" /></label>' +
       '<label class="field"><span>Units per dose</span><input name="unitsPerDose" type="number" min="0.1" step="any" placeholder="Default: 1 — used for discrepancy sizing" /></label>' +
+      '<label class="field"><span>Webster Pack</span><select name="websterPackId">' + packOptions("") + "</select></label>" +
       "</div>" +
       '<div class="section-divider"></div>' +
       '<h2 class="section-title">Recurring delivery (optional)</h2>' +
@@ -2393,6 +2491,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         '<label class="field"><span>Cease date (if stopped)</span><input name="ceaseDate" type="date" value="' + (med.ceaseDate || "") + '" /></label>' +
         '<label class="field"><span>Reorder lead time (days)</span><input name="reorderLeadDays" type="number" min="1" step="1" value="' + (med.reorderLeadDays || "") + '" placeholder="Default: 7" /></label>' +
         '<label class="field"><span>Units per dose</span><input name="unitsPerDose" type="number" min="0.1" step="any" value="' + (med.unitsPerDose || "") + '" placeholder="Default: 1" /></label>' +
+        '<label class="field"><span>Webster Pack</span><select name="websterPackId">' + packOptions(med.websterPackId || "") + "</select></label>" +
         "</div>" +
         '<div class="section-divider"></div>' +
         '<h2 class="section-title">Recurring delivery (optional)</h2>' +
@@ -2966,8 +3065,13 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     var m5 = { id: uid("med"), name: "Diazepam 5mg", client: "Client E", house: hid, stock: 30, unit: "tablets", type: "PRN", route: "Buccal", avgUsagePerDay: 0.5, expiryDate: addDaysISO(-5), ceaseDate: "", dosageInstructions: "As directed by GP for seizure management", prnInstructions: "Buccal midazolam protocol — see individual care plan", repeatCount: 1, notes: "Emergency seizure medication — check care plan before administering.", createdAt: new Date().toISOString() };
     var m6 = { id: uid("med"), name: "Warfarin 5mg", client: "Client B", house: hid, stock: 15, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(90), ceaseDate: addDaysISO(-10), dosageInstructions: "1 tablet daily, INR monitored", prnInstructions: "", repeatCount: 0, notes: "Ceased by GP — switched to Apixaban.", createdAt: new Date().toISOString() };
     var m7 = { id: uid("med"), name: "Insulin Glargine", client: "Client A", house: hid, stock: 3, unit: "mL", type: "Routine", route: "Injection (subcutaneous)", avgUsagePerDay: 0.3, expiryDate: addDaysISO(15), ceaseDate: "", dosageInstructions: "Inject subcutaneously once daily at night", prnInstructions: "", repeatCount: 0, notes: "Rotate injection sites.", createdAt: new Date().toISOString() };
-    var m8 = { id: uid("med"), name: "Webster Pack (weekly)", client: "Client D", house: hid, stock: 3, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(180), ceaseDate: "", dosageInstructions: "As per pharmacy-packed Webster pack schedule", prnInstructions: "", repeatCount: 0, notes: "Delivered weekly by pharmacy — confirm receipt each cycle.", recurringEnabled: true, recurringQty: 7, recurringIntervalDays: 7, recurringNextDue: addDaysISO(-2), createdAt: new Date().toISOString() };
+    var m8 = { id: uid("med"), name: "Perindopril 4mg", client: "Client D", house: hid, stock: 3, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(180), ceaseDate: "", dosageInstructions: "As per pharmacy-packed Webster pack schedule", prnInstructions: "", repeatCount: 0, notes: "Delivered weekly by pharmacy — confirm receipt each cycle.", recurringEnabled: true, recurringQty: 7, recurringIntervalDays: 7, recurringNextDue: addDaysISO(-2), createdAt: new Date().toISOString() };
     h.meds.push(m1, m2, m3, m4, m5, m6, m7, m8);
+
+    var pack1 = { id: uid("pack"), name: "Webster Pack D", createdAt: new Date().toISOString() };
+    h.websterPacks.push(pack1);
+    m4.websterPackId = pack1.id;
+    m8.websterPackId = pack1.id;
 
     h.deliveries.push({ id: uid("del"), medId: m1.id, medName: m1.name, client: m1.client, quantity: 40, unit: "tablets", expiryDate: m1.expiryDate, deliveryDate: addDaysISO(-10), house: hid, createdAt: new Date().toISOString() });
     h.deliveries.push({ id: uid("del"), medId: m3.id, medName: m3.name, client: m3.client, quantity: 1, unit: "tubes", expiryDate: m3.expiryDate, deliveryDate: addDaysISO(-45), house: hid, createdAt: new Date().toISOString() });
@@ -3184,9 +3288,12 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     ["Client K"].forEach(function (name) {
       if (!h.clients.some(function (c) { return c.name === name; })) h.clients.push({ id: uid("cli"), name: name, createdAt: new Date().toISOString() });
     });
-    var m1 = { id: uid("med"), name: "Webster Pack (fortnightly)", client: "Client K", house: hid, stock: 2, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(200), ceaseDate: "", dosageInstructions: "As per pharmacy-packed Webster pack schedule", prnInstructions: "", repeatCount: 0, notes: "Delivered fortnightly by pharmacy.", recurringEnabled: true, recurringQty: 14, recurringIntervalDays: 14, recurringNextDue: addDaysISO(-3), createdAt: new Date().toISOString() };
+    var m1 = { id: uid("med"), name: "Risperidone 2mg", client: "Client K", house: hid, stock: 2, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(200), ceaseDate: "", dosageInstructions: "As per pharmacy-packed Webster pack schedule", prnInstructions: "", repeatCount: 0, notes: "Delivered fortnightly by pharmacy.", recurringEnabled: true, recurringQty: 14, recurringIntervalDays: 14, recurringNextDue: addDaysISO(-3), createdAt: new Date().toISOString() };
     var m2 = { id: uid("med"), name: "Quetiapine 25mg", client: "Client K", house: hid, stock: 40, unit: "tablets", type: "Routine", route: "Oral", avgUsagePerDay: 1, expiryDate: addDaysISO(120), ceaseDate: addDaysISO(-15), dosageInstructions: "1 tablet at night", prnInstructions: "", repeatCount: 0, notes: "Ceased by psychiatrist — no longer required.", createdAt: new Date().toISOString() };
     h.meds.push(m1, m2);
+    var pack8 = { id: uid("pack"), name: "Webster Pack K", createdAt: new Date().toISOString() };
+    h.websterPacks.push(pack8);
+    m1.websterPackId = pack8.id;
     addAudit(hid, "Medication added", m1.name + " (" + m1.client + ") added to register.");
     addAudit(hid, "Medication added", m2.name + " (" + m2.client + ") added to register.");
     addAudit(hid, "Medication updated", m2.name + " (" + m2.client + ") details updated — ceased by psychiatrist.");
@@ -3380,6 +3487,70 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         state.modal = { type: "medDetail", id: el.getAttribute("data-id"), editing: false };
         state.modalError = "";
         render();
+        break;
+      case "open-pack-detail":
+        if (isSupportWorker()) break;
+        state.modal = { type: "packDetail", packId: el.getAttribute("data-id") };
+        state.modalError = "";
+        render();
+        break;
+      case "new-webster-pack":
+        if (isSupportWorker()) break;
+        var newPackName = (window.prompt("Name this Webster Pack (e.g. \"Webster Pack A\"):") || "").trim();
+        if (!newPackName) break;
+        mutate(function () {
+          var h = houseData();
+          var pack = { id: uid("pack"), name: newPackName, createdAt: new Date().toISOString() };
+          h.websterPacks.push(pack);
+          addAudit(state.houseId, "Webster Pack created", newPackName + " created.");
+        });
+        break;
+      case "assign-pack-med":
+        if (isSupportWorker()) break;
+        var assignSelectEl = document.getElementById("packAssignSelect");
+        var assignMedId = assignSelectEl ? assignSelectEl.value : "";
+        var assignPackId = el.getAttribute("data-pack-id");
+        if (!assignMedId) break;
+        mutate(function () {
+          var h = houseData();
+          var m = h.meds.find(function (mm) { return mm.id === assignMedId; });
+          var p = h.websterPacks.find(function (pp) { return pp.id === assignPackId; });
+          if (!m || !p) return;
+          m.websterPackId = assignPackId;
+          addAudit(state.houseId, "Medication assigned to Webster Pack", m.name + " added to " + p.name + ".");
+        });
+        render();
+        break;
+      case "unassign-pack-med":
+        if (isSupportWorker()) break;
+        var unassignMedId = el.getAttribute("data-id");
+        mutate(function () {
+          var h = houseData();
+          var m = h.meds.find(function (mm) { return mm.id === unassignMedId; });
+          if (!m) return;
+          m.websterPackId = "";
+          addAudit(state.houseId, "Medication removed from Webster Pack", m.name + " unlinked from its Webster Pack.");
+        });
+        render();
+        break;
+      case "delete-webster-pack":
+        if (isSupportWorker()) break;
+        var delPackId = el.getAttribute("data-id");
+        if (state.pendingDelete === delPackId) {
+          mutate(function () {
+            var h = houseData();
+            var p = h.websterPacks.find(function (pp) { return pp.id === delPackId; });
+            h.meds.forEach(function (m) { if (m.websterPackId === delPackId) m.websterPackId = ""; });
+            h.websterPacks = h.websterPacks.filter(function (pp) { return pp.id !== delPackId; });
+            if (p) addAudit(state.houseId, "Webster Pack deleted", p.name + " deleted; linked medications kept, unassigned from pack.");
+          });
+          state.pendingDelete = null;
+          state.modal = null;
+          render();
+        } else {
+          state.pendingDelete = delPackId;
+          render();
+        }
         break;
       case "edit-med":
         if (isSupportWorker()) break;
@@ -3886,6 +4057,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         prnInstructions: (v.prnInstructions || "").trim(),
         notes: (v.notes || "").trim(),
         repeatCount: 0,
+        websterPackId: v.websterPackId || "",
         createdAt: new Date().toISOString()
       };
       houseData().meds.push(med);
@@ -3926,6 +4098,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       med.dosageInstructions = (v.dosageInstructions || "").trim();
       med.prnInstructions = (v.prnInstructions || "").trim();
       med.notes = (v.notes || "").trim();
+      med.websterPackId = v.websterPackId || "";
       addAudit(state.houseId, "Medication updated", med.name + " (" + med.client + ") details updated.");
     });
     state.modal.editing = false;
