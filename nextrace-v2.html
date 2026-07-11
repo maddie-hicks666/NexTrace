@@ -501,14 +501,6 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     "Confirm delivery": "blue"
   };
 
-  var DEMO_USERS = [
-    { username: "admin", password: "admin123", role: "Admin", houses: [1,2,3,4,5,6,7,8], displayName: "Alex (Admin)" },
-    { username: "tl1", password: "tl123", role: "Team Leader", houses: [1,2], displayName: "Jordan (Team Leader)" },
-    { username: "staff1", password: "staff123", role: "Support Worker", houses: [1], displayName: "Sam (Support Worker)" },
-    { username: "cos1", password: "cos123", role: "Coordinator of Supports", houses: [1,2,3,4,5,6,7,8], displayName: "Morgan (Coordinator of Supports)" },
-    { username: "clinical1", password: "clinical123", role: "Clinical", houses: [1,2,3,4,5,6,7,8], displayName: "Priya (Clinical)" }
-  ];
-
   var state = {
     user: null,
     houseId: null,
@@ -536,6 +528,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     loginError: "",
     modalError: "",
     loaded: false,
+    authChecked: false,
+    loggingIn: false,
     pendingDelete: null,
     pendingRepeatAttachment: null,
     data: {}
@@ -992,7 +986,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   }
 
   function houseStorageKey(id) {
-    return "nextrace-house-" + id + "-v1";
+    var orgPart = (state.user && state.user.orgId) ? state.user.orgId : "default";
+    return "org-" + orgPart + "-house-" + id + "-v1";
   }
 
   /* ---------- storage adapter ----------
@@ -1007,19 +1002,106 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   var storageBackend = "supabase";
   var lastStorageError = "";
+  var SESSION_KEY = "nextrace_session_v1";
+
+  function saveSession(user) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    } catch (e) {
+      console.error("NexTrace: couldn't persist session locally", e);
+    }
+  }
+
+  function loadSessionFromStorage() {
+    try {
+      var raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
+
+  async function supabaseAuthLogin(email, password) {
+    var res = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=password", {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email, password: password })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok || !data.access_token) {
+      return { ok: false, error: (data && (data.error_description || data.msg)) || "Incorrect email or password." };
+    }
+    return { ok: true, accessToken: data.access_token, refreshToken: data.refresh_token, authUser: data.user };
+  }
+
+  async function supabaseAuthRefresh(refreshToken) {
+    var res = await fetch(SUPABASE_URL + "/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    var data = await res.json().catch(function () { return {}; });
+    if (!res.ok || !data.access_token) return { ok: false };
+    return { ok: true, accessToken: data.access_token, refreshToken: data.refresh_token };
+  }
+
+  async function fetchProfile(userId, accessToken) {
+    var res = await fetch(SUPABASE_URL + "/rest/v1/profiles?id=eq." + userId + "&select=*", {
+      headers: { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + accessToken }
+    });
+    if (!res.ok) return null;
+    var rows = await res.json().catch(function () { return []; });
+    return rows[0] || null;
+  }
+
+  async function buildUserFromAuth(authUser, accessToken, refreshToken) {
+    var profile = await fetchProfile(authUser.id, accessToken);
+    if (!profile) return null;
+    return {
+      id: authUser.id,
+      email: authUser.email,
+      displayName: profile.display_name,
+      role: profile.role,
+      houses: (profile.houses || "").split(",").map(function (s) { return Number(s.trim()); }).filter(function (n) { return !isNaN(n); }),
+      orgId: profile.org_id,
+      accessToken: accessToken,
+      refreshToken: refreshToken
+    };
+  }
+
+  function authHeader() {
+    return (state.user && state.user.accessToken) ? state.user.accessToken : SUPABASE_KEY;
+  }
+
+  async function tryRefreshSession() {
+    if (!state.user || !state.user.refreshToken) return false;
+    var r = await supabaseAuthRefresh(state.user.refreshToken);
+    if (!r.ok) return false;
+    state.user.accessToken = r.accessToken;
+    state.user.refreshToken = r.refreshToken;
+    saveSession(state.user);
+    return true;
+  }
 
   var storageAdapter = {
-    async get(key) {
+    async get(key, _retried) {
       try {
         var res = await fetch(
           SUPABASE_URL + "/rest/v1/app_storage?key=eq." + encodeURIComponent(key) + "&select=value",
           {
             headers: {
               "apikey": SUPABASE_KEY,
-              "Authorization": "Bearer " + SUPABASE_KEY
+              "Authorization": "Bearer " + authHeader()
             }
           }
         );
+        if (res.status === 401 && !_retried && (await tryRefreshSession())) {
+          return storageAdapter.get(key, true);
+        }
         if (!res.ok) {
           var bodyText = await res.text().catch(function () { return ""; });
           throw new Error("Supabase get failed: " + res.status + " " + bodyText);
@@ -1038,18 +1120,21 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         }
       }
     },
-    async set(key, value) {
+    async set(key, value, _retried) {
       try {
         var res = await fetch(SUPABASE_URL + "/rest/v1/app_storage?on_conflict=key", {
           method: "POST",
           headers: {
             "apikey": SUPABASE_KEY,
-            "Authorization": "Bearer " + SUPABASE_KEY,
+            "Authorization": "Bearer " + authHeader(),
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates"
           },
-          body: JSON.stringify({ key: key, value: value })
+          body: JSON.stringify({ key: key, value: value, org_id: state.user ? state.user.orgId : null })
         });
+        if (res.status === 401 && !_retried && (await tryRefreshSession())) {
+          return storageAdapter.set(key, value, true);
+        }
         if (!res.ok) {
           var bodyText2 = await res.text().catch(function () { return ""; });
           throw new Error("Supabase set failed: " + res.status + " " + bodyText2);
@@ -1082,6 +1167,15 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       lastStorageError = "";
       try {
         var res = await storageAdapter.get(houseStorageKey(i));
+        if (!res || !res.value) {
+          // Migration: data saved before org-scoped keys existed used a plain key.
+          var legacyRes = await storageAdapter.get("nextrace-house-" + i + "-v1");
+          if (legacyRes && legacyRes.value) {
+            res = legacyRes;
+            await storageAdapter.set(houseStorageKey(i), legacyRes.value);
+            console.log("NexTrace: migrated house " + i + " from legacy key to org-scoped key");
+          }
+        }
         houseData2 = res && res.value ? JSON.parse(res.value) : null;
         if (lastStorageError) {
           state.loadErrors.push({ house: i, error: lastStorageError });
@@ -1197,12 +1291,16 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     var existingTabbar = document.querySelector(".tabbar");
     var tabbarScroll = existingTabbar ? existingTabbar.scrollLeft : null;
 
-    if (!state.loaded) {
+    if (!state.authChecked) {
       app.innerHTML = renderLoading();
       return;
     }
     if (!state.user) {
       app.innerHTML = renderLogin();
+      return;
+    }
+    if (!state.loaded) {
+      app.innerHTML = renderLoading();
       return;
     }
     if (isCOS()) {
@@ -1264,18 +1362,10 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<div class="login-card">' +
       '<div class="brand"><span class="brand-mark">' + icon("pill") + '</span><div><div class="brand-name">NexTrace</div><div class="brand-sub">SIL &amp; Support House Register</div></div></div>' +
       '<div id="loginForm" class="stack" data-submit="submit-login">' +
-      '<label class="field"><span>Username</span><input id="loginUsername" name="username" autocomplete="username" /></label>' +
+      '<label class="field"><span>Email</span><input id="loginUsername" name="username" type="email" autocomplete="username" /></label>' +
       '<label class="field"><span>Password</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" /></label>' +
       (state.loginError ? '<div class="form-error">' + esc(state.loginError) + "</div>" : "") +
-      '<button type="button" class="btn btn-primary btn-block" data-action="submit-login">Sign in</button>' +
-      "</div>" +
-      '<div class="demo-box">' +
-      '<div class="demo-title">Demo accounts</div>' +
-      '<div class="demo-row"><code>admin / admin123</code><span>Admin · all houses</span></div>' +
-      '<div class="demo-row"><code>tl1 / tl123</code><span>Team Leader · houses 1–2</span></div>' +
-      '<div class="demo-row"><code>staff1 / staff123</code><span>Support Worker · house 1</span></div>' +
-      '<div class="demo-row"><code>cos1 / cos123</code><span>Coordinator of Supports · preview only</span></div>' +
-      '<div class="demo-row"><code>clinical1 / clinical123</code><span>Clinical · medications only</span></div>' +
+      '<button type="button" class="btn btn-primary btn-block" data-action="submit-login"' + (state.loggingIn ? " disabled" : "") + ">" + (state.loggingIn ? "Signing in…" : "Sign in") + "</button>" +
       "</div>" +
       '<p class="fine-print">Data is stored centrally for this tool and is shared between everyone using it — avoid entering real client names if that\'s a concern; initials work well.</p>' +
       "</div>" +
@@ -3537,6 +3627,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
     switch (action) {
       case "logout":
+        clearSession();
         state.user = null;
         state.houseId = null;
         state.tab = "dashboard";
@@ -3544,6 +3635,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         state.viewingOpsOverview = false;
         state.viewingAllHouses = false;
         state.sinceLastLogin = null;
+        state.loaded = false;
+        state.data = {};
         render();
         break;
       case "select-house":
@@ -4104,22 +4197,49 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   var SUBMIT_HANDLERS = {}; // populated below, after the handler functions are defined
 
-  function doSubmitLogin() {
+  async function doSubmitLogin() {
     var v = getFormValues("loginForm");
-    var uname = (v.username || "").trim();
+    var email = (v.username || "").trim();
     var pass = (v.password || "").trim();
-    var found = DEMO_USERS.find(function (u) { return u.username === uname && u.password === pass; });
-    if (found) {
-      state.user = found;
-      state.loginError = "";
-      if (found.role === "Admin" || found.role === "Clinical") {
-        state.viewingOpsOverview = true;
-        loadLoginActivity(found.username);
-      }
-    } else {
-      state.loginError = "Incorrect username or password. Try one of the demo accounts below.";
+    if (!email || !pass) {
+      state.loginError = "Please enter your email and password.";
+      render();
+      return;
     }
+    state.loggingIn = true;
+    state.loginError = "";
     render();
+    try {
+      var auth = await supabaseAuthLogin(email, pass);
+      if (!auth.ok) {
+        state.loginError = "Incorrect email or password.";
+        state.loggingIn = false;
+        render();
+        return;
+      }
+      var user = await buildUserFromAuth(auth.authUser, auth.accessToken, auth.refreshToken);
+      if (!user) {
+        state.loginError = "This account doesn't have an access profile set up yet. Contact an admin.";
+        state.loggingIn = false;
+        render();
+        return;
+      }
+      state.user = user;
+      state.loggingIn = false;
+      saveSession(user);
+      state.loaded = false;
+      render();
+      await loadData();
+      if (user.role === "Admin" || user.role === "Clinical") {
+        state.viewingOpsOverview = true;
+        loadLoginActivity(user.email);
+      }
+      render();
+    } catch (e) {
+      state.loginError = "Couldn't reach the login server (" + (e && e.message ? e.message : String(e)) + "). Check your connection and try again.";
+      state.loggingIn = false;
+      render();
+    }
   }
 
   async function loadLoginActivity(username) {
@@ -5043,13 +5163,42 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   /* ---------- init ---------- */
 
-  function init() {
+  async function init() {
     var app = document.getElementById("app");
     app.addEventListener("click", handleClick);
     app.addEventListener("input", handleInput);
     app.addEventListener("change", handleInput);
     app.addEventListener("keydown", handleKeydown);
-    loadData();
+    render();
+
+    var saved = loadSessionFromStorage();
+    if (saved && saved.accessToken && saved.id) {
+      var profile = await fetchProfile(saved.id, saved.accessToken).catch(function () { return null; });
+      if (!profile && saved.refreshToken) {
+        var r = await supabaseAuthRefresh(saved.refreshToken).catch(function () { return { ok: false }; });
+        if (r.ok) {
+          saved.accessToken = r.accessToken;
+          saved.refreshToken = r.refreshToken;
+          profile = await fetchProfile(saved.id, saved.accessToken).catch(function () { return null; });
+        }
+      }
+      if (profile) {
+        saved.displayName = profile.display_name;
+        saved.role = profile.role;
+        saved.houses = (profile.houses || "").split(",").map(function (s) { return Number(s.trim()); }).filter(function (n) { return !isNaN(n); });
+        saved.orgId = profile.org_id;
+        state.user = saved;
+        saveSession(saved);
+        state.authChecked = true;
+        render();
+        await loadData();
+        render();
+        return;
+      }
+      clearSession();
+    }
+    state.authChecked = true;
+    render();
   }
 
   if (document.readyState === "loading") {
