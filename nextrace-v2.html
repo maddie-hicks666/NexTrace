@@ -2920,7 +2920,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
     var itemField = isNewItemOrder
       ? '<p class="muted">This delivery will create <strong>' + esc(selectedOrder.itemLabel) + "</strong> for " + esc(selectedOrder.newItemClient) + " as a new consumable.</p>"
-      : '<label class="field"><span>Consumable *</span><select name="itemId">' + (h.consumables.length ? consumableOptions() : '<option value="">No consumables recorded yet</option>') + "</select></label>";
+      : '<label class="field"><span>Consumable *</span><select name="itemId">' + (h.consumables.length ? consumableOptions(selectedOrder ? selectedOrder.existingItemId : "") : '<option value="">No consumables recorded yet</option>') + "</select></label>";
 
     var body =
       modalError() +
