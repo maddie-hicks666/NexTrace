@@ -1278,7 +1278,6 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<div class="demo-row"><code>clinical1 / clinical123</code><span>Clinical · medications only</span></div>' +
       "</div>" +
       '<p class="fine-print">Data is stored centrally for this tool and is shared between everyone using it — avoid entering real client names if that\'s a concern; initials work well.</p>' +
-      '<button type="button" class="btn btn-ghost btn-sm btn-block" data-action="test-connection" style="margin-top:8px">Test Supabase Connection</button>' +
       "</div>" +
       "</div>"
     );
@@ -3911,41 +3910,6 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         break;
       case "load-sample":
         mutate(function () { loadSampleData(); });
-        break;
-      case "test-connection":
-        (async function () {
-          var log = [];
-          try {
-            log.push("URL: " + SUPABASE_URL);
-            log.push("Key prefix: " + SUPABASE_KEY.slice(0, 12) + "...");
-            var writeRes = await fetch(SUPABASE_URL + "/rest/v1/app_storage?on_conflict=key", {
-              method: "POST",
-              headers: {
-                "apikey": SUPABASE_KEY,
-                "Authorization": "Bearer " + SUPABASE_KEY,
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates,return=representation"
-              },
-              body: JSON.stringify({ key: "__connection_test__", value: "hello " + new Date().toISOString() })
-            });
-            var writeBody = await writeRes.text();
-            log.push("WRITE status: " + writeRes.status);
-            log.push("WRITE body: " + writeBody.slice(0, 300));
-
-            var readRes = await fetch(SUPABASE_URL + "/rest/v1/app_storage?key=eq.__connection_test__&select=*", {
-              headers: {
-                "apikey": SUPABASE_KEY,
-                "Authorization": "Bearer " + SUPABASE_KEY
-              }
-            });
-            var readBody = await readRes.text();
-            log.push("READ status: " + readRes.status);
-            log.push("READ body: " + readBody.slice(0, 300));
-          } catch (e) {
-            log.push("EXCEPTION: " + (e && e.message ? e.message : String(e)));
-          }
-          alert(log.join("\n\n"));
-        })();
         break;
       case "load-sample-all-houses":
         mutate(function () {
