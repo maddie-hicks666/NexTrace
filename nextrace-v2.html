@@ -526,6 +526,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     equipmentFilter: "all",
     cosClientKey: "",
     allHousesSort: "severity",
+    globalSearch: "",
     viewingAllHouses: false,
     saveError: false,
     storageDisabled: false,
@@ -1466,6 +1467,43 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     return a.targetType !== "consumable" && a.targetType !== "equipment";
   }
 
+  function globalSearchResults() {
+    var q = (state.globalSearch || "").trim().toLowerCase();
+    if (!q) return [];
+    var results = [];
+    (state.user.houses || []).forEach(function (hid) {
+      var h = state.data[hid];
+      if (!h) return;
+      var hLabel = houseLabel(hid);
+      (h.meds || []).forEach(function (m) {
+        if ((m.name + " " + m.client).toLowerCase().indexOf(q) !== -1) {
+          results.push({ type: "Medication", label: m.name, sub: m.client + " · " + hLabel, houseId: hid, targetType: "med", targetId: m.id });
+        }
+      });
+      (h.clients || []).forEach(function (c) {
+        if (c.name.toLowerCase().indexOf(q) !== -1) {
+          results.push({ type: "Client", label: c.name, sub: hLabel, houseId: hid, targetType: "client", targetId: c.id });
+        }
+      });
+      (h.consumables || []).forEach(function (c) {
+        if ((c.name + " " + (c.variant || "") + " " + c.client + " " + c.category).toLowerCase().indexOf(q) !== -1) {
+          results.push({ type: "Consumable", label: c.name + (c.variant ? " (" + c.variant + ")" : ""), sub: c.client + " · " + hLabel, houseId: hid, targetType: "consumable", targetId: c.id });
+        }
+      });
+      (h.equipment || []).forEach(function (eq) {
+        if ((eq.name + " " + eq.client).toLowerCase().indexOf(q) !== -1) {
+          results.push({ type: "Equipment", label: eq.name, sub: eq.client + " · " + hLabel, houseId: hid, targetType: "equipment", targetId: eq.id });
+        }
+      });
+      (h.websterPacks || []).forEach(function (p) {
+        if (p.name.toLowerCase().indexOf(q) !== -1) {
+          results.push({ type: "Webster Pack", label: p.name, sub: hLabel, houseId: hid, targetType: "pack", targetId: p.id });
+        }
+      });
+    });
+    return results.slice(0, 40);
+  }
+
   function renderDashboard() {
     var h = houseData();
     var counts = { red: 0, yellow: 0, green: 0, ceased: 0 };
@@ -1522,8 +1560,25 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       (isClinical() ? "" : '<div class="quick-action-group-label">Consumables</div>' + conActions) +
       (otherActions ? '<div class="quick-action-group-label">Other</div>' + otherActions : "");
 
+    var searchQuery = (state.globalSearch || "").trim();
+    var searchResults = searchQuery ? globalSearchResults() : [];
+    var searchResultsHtml = searchQuery ? (
+      '<div class="panel" style="margin-bottom:16px">' +
+      '<div class="panel-head">Search results <span class="badge-count">' + searchResults.length + "</span></div>" +
+      (searchResults.length
+        ? searchResults.map(function (r) {
+            return '<div class="row-card" data-action="go-to-search-result" data-house="' + r.houseId + '" data-type="' + r.targetType + '" data-id="' + esc(r.targetId) + '" style="cursor:pointer">' +
+              '<div style="flex:1"><div class="row-title">' + esc(r.label) + '</div><div class="row-sub">' + esc(r.type) + " · " + esc(r.sub) + "</div></div>" +
+              "</div>";
+          }).join("")
+        : '<div class="empty-inline">No matches for "' + esc(searchQuery) + '" across your houses.</div>') +
+      "</div>"
+    ) : "";
+
     return (
       '<h1 class="page-title">' + esc(houseLabel(state.houseId)) + " Dashboard</h1>" +
+      '<div class="search-box" style="margin-bottom:16px">' + icon("search") + '<input id="globalSearchInput" placeholder="Search medications, clients, consumables, equipment, Webster Packs…" value="' + esc(state.globalSearch) + '" data-input="globalSearch" /></div>' +
+      searchResultsHtml +
       '<div class="summary-grid">' +
       summaryCard("sc-red", "red", counts.red, "Critical") +
       summaryCard("sc-yellow", "yellow", counts.yellow, "Low stock") +
@@ -3328,6 +3383,10 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       state.modal = { type: "discrepancies", resolvingId: targetId };
     } else if (targetType === "recurring" && targetId) {
       state.modal = { type: "confirmRecurring", medId: targetId };
+    } else if (targetType === "client" && targetId) {
+      state.modal = { type: "clientDetail", clientId: targetId };
+    } else if (targetType === "pack" && targetId) {
+      state.modal = { type: "packDetail", packId: targetId };
     } else if (targetType === "auditType" && targetId) {
       state.tab = alertTab;
       state.auditTypeFilter = targetId;
@@ -3462,6 +3521,17 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         state.viewingAllHouses = false;
         state.tab = "dashboard";
         applyAlertTarget(el.getAttribute("data-target-type"), el.getAttribute("data-target-id"), el.getAttribute("data-tab"));
+        render();
+        break;
+      case "go-to-search-result":
+        var searchHouse = Number(el.getAttribute("data-house"));
+        if (state.user.houses.indexOf(searchHouse) === -1) break;
+        state.houseId = searchHouse;
+        state.viewingAllHouses = false;
+        state.viewingOpsOverview = false;
+        state.tab = "dashboard";
+        state.globalSearch = "";
+        applyAlertTarget(el.getAttribute("data-type"), el.getAttribute("data-id"), "dashboard");
         render();
         break;
       case "open-modal":
@@ -3848,6 +3918,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     var key = t.getAttribute && t.getAttribute("data-input");
     if (!key) return;
     if (key === "medSearch") { state.medSearch = t.value; preserveFocusRerender(); }
+    else if (key === "globalSearch") { state.globalSearch = t.value; preserveFocusRerender(); }
     else if (key === "deliverySearch") { state.deliverySearch = t.value; preserveFocusRerender(); }
     else if (key === "auditSearch") { state.auditSearch = t.value; preserveFocusRerender(); }
     else if (key === "consumableSearch") { state.consumableSearch = t.value; preserveFocusRerender(); }
