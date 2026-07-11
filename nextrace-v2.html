@@ -426,7 +426,8 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   var CONSUMABLE_UNITS = ["pack", "box", "carton", "tube", "bottle", "pair", "each", "roll"];
   var CONSUMABLE_CATEGORY_LEAD_WEEKS = { "Pads": 2, "Inserts": 2, "Wipes": 1, "Barrier Cream": 2, "Formula": 3, "PEG Feeding Supplies": 3, "Gloves": 1, "Other": 2 };
   var DISCREPANCY_REASONS = ["Expired", "Ceased", "Damaged or disposed", "Administration error", "Unknown", "Other"];
-  var DEFAULT_HOUSE_NAMES = { 1: "Wattle House", 2: "Banksia House", 3: "Grevillea House", 4: "Correa House", 5: "Hakea House", 6: "Boronia House", 7: "Acacia House", 8: "Waratah House" };
+  var TOTAL_HOUSES = 16;
+  var DEFAULT_HOUSE_NAMES = { 1: "Wattle House", 2: "Banksia House", 3: "Grevillea House", 4: "Correa House", 5: "Hakea House", 6: "Boronia House", 7: "Acacia House", 8: "Waratah House", 9: "Bottlebrush House", 10: "Wandoo House", 11: "Melaleuca House", 12: "Kurrajong House", 13: "Tea Tree House", 14: "Eucalypt House", 15: "Flannel Flower House", 16: "Sturt House" };
   var HOUSE_COLORS = {
     1: { base: "#0F6E63", tint: "#E3F1EE" },
     2: { base: "#1D5F8A", tint: "#E5F1F8" },
@@ -435,7 +436,15 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     5: { base: "#A23E6B", tint: "#F8E7EF" },
     6: { base: "#3F6B52", tint: "#E7F1EC" },
     7: { base: "#7A5230", tint: "#F1E8DE" },
-    8: { base: "#405166", tint: "#E8ECF1" }
+    8: { base: "#405166", tint: "#E8ECF1" },
+    9: { base: "#8A6D1D", tint: "#F5EFDD" },
+    10: { base: "#2E6B7E", tint: "#E4F0F3" },
+    11: { base: "#6B3F5B", tint: "#F1E6EC" },
+    12: { base: "#4A6B2E", tint: "#EBF1E4" },
+    13: { base: "#7E4A2E", tint: "#F3E9E1" },
+    14: { base: "#2E4A7E", tint: "#E4E9F3" },
+    15: { base: "#7E2E4A", tint: "#F3E4E9" },
+    16: { base: "#4A7E6B", tint: "#E4F3EE" }
   };
   var MED_EXPORT_FIELDS = [
     { key: "name", label: "Medication name", def: true },
@@ -1162,7 +1171,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   async function loadData() {
     state.data = {};
     state.loadErrors = [];
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= TOTAL_HOUSES; i++) {
       var houseData2 = null;
       lastStorageError = "";
       try {
@@ -1230,7 +1239,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   }
 
   async function saveData() {
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= TOTAL_HOUSES; i++) {
       if (state.data[i]) await saveHouse(i);
     }
   }
@@ -1375,8 +1384,9 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
   function renderHouseSelect() {
     var cards = "";
-    for (var i = 1; i <= 8; i++) {
+    for (var i = 1; i <= TOTAL_HOUSES; i++) {
       var allowed = state.user.houses.indexOf(i) !== -1;
+      if (!allowed && i > 8) continue; // don't clutter the screen with unused house slots nobody has access to yet
       var h = state.data[i];
       var counts = { red: 0, yellow: 0, green: 0 };
       if (allowed) {
@@ -2170,11 +2180,36 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       return '<div class="mini-row" data-action="open-equipment-detail" data-id="' + eq.id + '" style="cursor:pointer">' + statusDot(col === "gray" ? "ceased" : col) + " " + esc(eq.name) + " — " + esc(eq.status) + "</div>";
     }).join("") : '<p class="muted">No equipment recorded.</p>';
 
+    var moveSection = "";
+    if (!isSupportWorker()) {
+      var otherHouses = state.user.houses.filter(function (hid) { return hid !== state.houseId; });
+      if (state.modal.moving) {
+        moveSection =
+          '<div class="section-divider"></div>' +
+          '<h2 class="section-title">Move to another house</h2>' +
+          '<p class="muted" style="margin-top:0">This moves ' + esc(client.name) + "'s client record, medications, consumables, equipment, repeats and delivery history to the selected house. Any Webster Pack assignment will be cleared, since packs belong to a specific house." + "</p>" +
+          (otherHouses.length
+            ? '<div class="form-grid">' +
+              '<label class="field"><span>Move to</span><select id="moveClientTargetHouse">' +
+              otherHouses.map(function (hid) { return '<option value="' + hid + '">' + esc(houseLabel(hid)) + "</option>"; }).join("") +
+              "</select></label>" +
+              "</div>" +
+              '<button type="button" class="btn btn-danger btn-block" data-action="confirm-move-client" data-id="' + client.id + '">Confirm move</button>' +
+              '<button type="button" class="btn btn-ghost btn-block" data-action="cancel-move-client">Cancel</button>'
+            : '<p class="muted">You don\'t have access to any other house to move this client to.</p><button type="button" class="btn btn-ghost btn-block" data-action="cancel-move-client">Cancel</button>')
+      } else {
+        moveSection =
+          '<div class="section-divider"></div>' +
+          '<button class="btn btn-ghost btn-block" data-action="start-move-client">' + icon("truck") + " Move to another house</button>";
+      }
+    }
+
     var body =
       '<div class="detail-section"><span class="detail-label">Medications</span>' + medsHtml + "</div>" +
       (isClinical() ? "" :
         '<div class="detail-section"><span class="detail-label">Consumables</span>' + consHtml + "</div>" +
-        '<div class="detail-section"><span class="detail-label">Equipment</span>' + eqHtml + "</div>");
+        '<div class="detail-section"><span class="detail-label">Equipment</span>' + eqHtml + "</div>") +
+      moveSection;
     return modalWrap(esc(client.name), body);
   }
 
@@ -4001,6 +4036,23 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         state.modalError = "";
         render();
         break;
+      case "start-move-client":
+        if (isSupportWorker()) break;
+        state.modal.moving = true;
+        render();
+        break;
+      case "cancel-move-client":
+        state.modal.moving = false;
+        render();
+        break;
+      case "confirm-move-client":
+        if (isSupportWorker()) break;
+        var moveClientId = el.getAttribute("data-id");
+        var moveSelectEl = document.getElementById("moveClientTargetHouse");
+        var targetHouseId = moveSelectEl ? Number(moveSelectEl.value) : null;
+        if (!targetHouseId || state.user.houses.indexOf(targetHouseId) === -1) break;
+        doMoveClient(moveClientId, targetHouseId);
+        break;
       case "load-sample":
         mutate(function () { loadSampleData(); });
         break;
@@ -4648,6 +4700,57 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     state.modal = null;
     state.modalError = "";
     render();
+  }
+
+  async function doMoveClient(clientId, targetHouseId) {
+    var sourceHouseId = state.houseId;
+    var sourceH = state.data[sourceHouseId];
+    var targetH = state.data[targetHouseId];
+    var client = sourceH.clients.find(function (c) { return c.id === clientId; });
+    if (!client || !targetH) return;
+    var name = client.name;
+    var fromLabel = houseLabel(sourceHouseId);
+    var toLabel = houseLabel(targetHouseId);
+
+    // Client record
+    sourceH.clients = sourceH.clients.filter(function (c) { return c.id !== clientId; });
+    targetH.clients.push(client);
+
+    // Medications (clear Webster Pack link — packs are house-specific)
+    var movedMeds = sourceH.meds.filter(function (m) { return m.client === name; });
+    sourceH.meds = sourceH.meds.filter(function (m) { return m.client !== name; });
+    movedMeds.forEach(function (m) { m.house = targetHouseId; m.websterPackId = ""; });
+    targetH.meds = targetH.meds.concat(movedMeds);
+
+    // Medication deliveries and repeats and discrepancies
+    ["deliveries", "repeats", "discrepancies"].forEach(function (field) {
+      var moved = sourceH[field].filter(function (r) { return r.client === name; });
+      sourceH[field] = sourceH[field].filter(function (r) { return r.client !== name; });
+      moved.forEach(function (r) { r.house = targetHouseId; });
+      targetH[field] = targetH[field].concat(moved);
+    });
+
+    // Consumables + their deliveries
+    var movedCons = sourceH.consumables.filter(function (c) { return c.client === name; });
+    var movedConsIds = movedCons.map(function (c) { return c.id; });
+    sourceH.consumables = sourceH.consumables.filter(function (c) { return c.client !== name; });
+    targetH.consumables = targetH.consumables.concat(movedCons);
+    var movedConsDeliveries = sourceH.consumableDeliveries.filter(function (d) { return movedConsIds.indexOf(d.itemId) !== -1; });
+    sourceH.consumableDeliveries = sourceH.consumableDeliveries.filter(function (d) { return movedConsIds.indexOf(d.itemId) === -1; });
+    targetH.consumableDeliveries = targetH.consumableDeliveries.concat(movedConsDeliveries);
+
+    // Equipment
+    var movedEq = sourceH.equipment.filter(function (e) { return e.client === name; });
+    sourceH.equipment = sourceH.equipment.filter(function (e) { return e.client !== name; });
+    targetH.equipment = targetH.equipment.concat(movedEq);
+
+    addAudit(sourceHouseId, "Client moved", name + " moved to " + toLabel + " — medications, consumables, equipment and history moved with them.");
+    addAudit(targetHouseId, "Client moved", name + " moved in from " + fromLabel + " — medications, consumables, equipment and history moved with them.");
+
+    state.modal = null;
+    render();
+    await saveHouse(sourceHouseId);
+    await saveHouse(targetHouseId);
   }
 
   function doSubmitAddClient() {
