@@ -2768,12 +2768,23 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<label class="field"><span>Unit</span><select name="unit">' + unitOptions("tablets") + "</select></label>" +
       '<label class="field"><span>Stock on hand *</span><input name="stock" type="number" min="0" step="any" /></label>' +
       '<label class="field"><span>Stock counted as of</span><input name="stockAsOfDate" type="date" value="' + todayISO() + '" /></label>' +
-      '<label class="field"><span>Average usage per day *</span><input name="avgUsagePerDay" type="number" min="0" step="any" placeholder="e.g. 2 = 1 tablet twice daily" /></label>' +
+      '<label class="field"><span>Average usage per day *</span><input id="addAvgUsagePerDay" name="avgUsagePerDay" type="number" min="0" step="any" placeholder="e.g. 2.5" /></label>' +
+      '<label class="field"><span>Units per dose</span><input id="addUnitsPerDose" name="unitsPerDose" type="number" min="0.1" step="any" placeholder="Auto-filled below, or set manually" /></label>' +
       '<label class="field"><span>Expiry date</span><input name="expiryDate" type="date" /></label>' +
       '<label class="field"><span>Cease date (if stopped)</span><input name="ceaseDate" type="date" /></label>' +
       '<label class="field"><span>Reorder lead time (days)</span><input name="reorderLeadDays" type="number" min="1" step="1" placeholder="Default: 7" /></label>' +
-      '<label class="field"><span>Units per dose</span><input name="unitsPerDose" type="number" min="0.1" step="any" placeholder="Default: 1 — used for discrepancy sizing" /></label>' +
       '<div class="field"><span>Webster Pack(s)</span>' + packCheckboxes([]) + "</div>" +
+      "</div>" +
+      '<div class="section-divider"></div>' +
+      '<h2 class="section-title">Daily dosing calculator (optional)</h2>' +
+      '<p class="muted" style="margin-top:0">Enter each dose given in a typical day — they don\'t need to be the same size (e.g. 1 tablet, then half a tablet, then 1 tablet).</p>' +
+      '<div id="addDoseRows" class="stack" style="gap:8px">' +
+      '<input type="number" class="dose-row-input" min="0" step="any" placeholder="Dose 1 amount, e.g. 1" />' +
+      '<input type="number" class="dose-row-input" min="0" step="any" placeholder="Dose 2 amount, e.g. 0.5" />' +
+      "</div>" +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-action="add-dose-row" data-form="add">+ Add another dose</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-action="calc-daily-usage" data-form="add">Fill in Average usage &amp; Units per dose from doses above</button>' +
       "</div>" +
       '<div class="section-divider"></div>' +
       '<h2 class="section-title">Recurring delivery (optional)</h2>' +
@@ -2816,12 +2827,23 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         '<label class="field"><span>Route</span><select name="route">' + routeOptions(med.route || "") + "</select></label>" +
         '<label class="field"><span>Unit</span><select name="unit">' + unitOptions(med.unit) + "</select></label>" +
         '<label class="field"><span>Current stock *</span><input name="stock" type="number" min="0" step="any" value="' + currentMedStock(med) + '" /></label>' +
-        '<label class="field"><span>Average usage per day *</span><input name="avgUsagePerDay" type="number" min="0" step="any" value="' + (med.avgUsagePerDay || "") + '" /></label>' +
+        '<label class="field"><span>Average usage per day *</span><input id="editAvgUsagePerDay" name="avgUsagePerDay" type="number" min="0" step="any" value="' + (med.avgUsagePerDay || "") + '" /></label>' +
+        '<label class="field"><span>Units per dose</span><input id="editUnitsPerDose" name="unitsPerDose" type="number" min="0.1" step="any" value="' + (med.unitsPerDose || "") + '" placeholder="Auto-filled below, or set manually" /></label>' +
         '<label class="field"><span>Expiry date</span><input name="expiryDate" type="date" value="' + (med.expiryDate || "") + '" /></label>' +
         '<label class="field"><span>Cease date (if stopped)</span><input name="ceaseDate" type="date" value="' + (med.ceaseDate || "") + '" /></label>' +
         '<label class="field"><span>Reorder lead time (days)</span><input name="reorderLeadDays" type="number" min="1" step="1" value="' + (med.reorderLeadDays || "") + '" placeholder="Default: 7" /></label>' +
-        '<label class="field"><span>Units per dose</span><input name="unitsPerDose" type="number" min="0.1" step="any" value="' + (med.unitsPerDose || "") + '" placeholder="Default: 1" /></label>' +
         '<div class="field"><span>Webster Pack(s) — a medication can be split across multiple packs (e.g. one for home, one for a day program) while sharing the same script</span>' + packCheckboxes(med.websterPackIds || []) + "</div>" +
+        "</div>" +
+        '<div class="section-divider"></div>' +
+        '<h2 class="section-title">Daily dosing calculator (optional)</h2>' +
+        '<p class="muted" style="margin-top:0">Enter each dose given in a typical day — they don\'t need to be the same size (e.g. 1 tablet, then half a tablet, then 1 tablet).</p>' +
+        '<div id="editDoseRows" class="stack" style="gap:8px">' +
+        '<input type="number" class="dose-row-input" min="0" step="any" placeholder="Dose 1 amount, e.g. 1" />' +
+        '<input type="number" class="dose-row-input" min="0" step="any" placeholder="Dose 2 amount, e.g. 0.5" />' +
+        "</div>" +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">' +
+        '<button type="button" class="btn btn-ghost btn-sm" data-action="add-dose-row" data-form="edit">+ Add another dose</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm" data-action="calc-daily-usage" data-form="edit">Fill in Average usage &amp; Units per dose from doses above</button>' +
         "</div>" +
         '<div class="section-divider"></div>' +
         '<h2 class="section-title">Recurring delivery (optional)</h2>' +
@@ -4004,6 +4026,30 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         break;
       case "submit-login":
         doSubmitLogin();
+        break;
+      case "add-dose-row":
+        var addRowForm = el.getAttribute("data-form");
+        var rowsContainer = document.getElementById(addRowForm === "add" ? "addDoseRows" : "editDoseRows");
+        if (rowsContainer) {
+          var rowCount = rowsContainer.querySelectorAll(".dose-row-input").length + 1;
+          rowsContainer.insertAdjacentHTML("beforeend", '<input type="number" class="dose-row-input" min="0" step="any" placeholder="Dose ' + rowCount + ' amount" />');
+        }
+        break;
+      case "calc-daily-usage":
+        var calcForm = el.getAttribute("data-form");
+        var rowsEl = document.getElementById(calcForm === "add" ? "addDoseRows" : "editDoseRows");
+        var unitsEl = document.getElementById(calcForm === "add" ? "addUnitsPerDose" : "editUnitsPerDose");
+        var avgEl = document.getElementById(calcForm === "add" ? "addAvgUsagePerDay" : "editAvgUsagePerDay");
+        var doseAmounts = rowsEl ? Array.prototype.slice.call(rowsEl.querySelectorAll(".dose-row-input"))
+          .map(function (inp) { return Number(inp.value); })
+          .filter(function (n) { return !isNaN(n) && n > 0; }) : [];
+        if (avgEl && doseAmounts.length) {
+          var total = doseAmounts.reduce(function (sum, n) { return sum + n; }, 0);
+          avgEl.value = Math.round(total * 100) / 100;
+          if (unitsEl) unitsEl.value = Math.round((total / doseAmounts.length) * 100) / 100;
+        } else {
+          alert("Enter at least one dose amount above to calculate this.");
+        }
         break;
       case "submit-add-med":
         doSubmitAddMed();
