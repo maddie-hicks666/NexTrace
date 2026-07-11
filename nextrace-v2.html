@@ -1071,7 +1071,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
   };
 
   function defaultHouseData(i) {
-    return { meds: [], deliveries: [], repeats: [], audit: [], clients: [], consumables: [], consumableDeliveries: [], equipment: [], discrepancies: [], alertTasks: [], websterPacks: [], houseName: DEFAULT_HOUSE_NAMES[i] || ("House " + i) };
+    return { meds: [], deliveries: [], repeats: [], audit: [], clients: [], consumables: [], consumableDeliveries: [], equipment: [], discrepancies: [], alertTasks: [], websterPacks: [], orders: [], houseName: DEFAULT_HOUSE_NAMES[i] || ("House " + i) };
   }
 
   async function loadData() {
@@ -1103,6 +1103,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       if (!state.data[i].discrepancies) state.data[i].discrepancies = [];
       if (!state.data[i].alertTasks) state.data[i].alertTasks = [];
       if (!state.data[i].websterPacks) state.data[i].websterPacks = [];
+      if (!state.data[i].orders) state.data[i].orders = [];
       if (!state.data[i].houseName) state.data[i].houseName = DEFAULT_HOUSE_NAMES[i] || ("House " + i);
     }
     if (state.loadErrors.length) {
@@ -1941,6 +1942,65 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     return modalWrap(pack.name, body);
   }
 
+  function renderOrdersModal() {
+    var h = houseData();
+    var typeFilter = state.modal.orderType || "all";
+    var title = typeFilter === "consumable" ? "Consumable orders" : typeFilter === "equipment" ? "Equipment orders" : "Orders";
+    var orders = h.orders.filter(function (o) { return typeFilter === "all" || o.itemType === typeFilter; });
+    var pending = orders.filter(function (o) { return o.status === "pending"; })
+      .slice().sort(function (a, b) { return (a.expectedDeliveryDate || "").localeCompare(b.expectedDeliveryDate || ""); });
+    var past = orders.filter(function (o) { return o.status !== "pending"; })
+      .slice().sort(function (a, b) { return (b.arrivedAt || b.orderedAt || "").localeCompare(a.arrivedAt || a.orderedAt || ""); }).slice(0, 15);
+
+    if (state.modal.adding) {
+      var body =
+        modalError() +
+        '<div id="addOrderForm" class="stack">' +
+        '<div class="form-grid">' +
+        '<label class="field"><span>Item type *</span><select name="itemType">' +
+        '<option value="consumable"' + (typeFilter === "equipment" ? "" : " selected") + ">Consumable</option>" +
+        '<option value="equipment"' + (typeFilter === "equipment" ? " selected" : "") + ">Equipment</option>" +
+        "</select></label>" +
+        '<label class="field"><span>Item / description *</span><input name="itemLabel" placeholder="e.g. Overnight pads, Large" /></label>' +
+        '<label class="field"><span>Quantity (optional)</span><input name="quantity" type="number" min="0" step="any" /></label>' +
+        '<label class="field"><span>Expected delivery date</span><input name="expectedDeliveryDate" type="date" /></label>' +
+        '<label class="field"><span>Ordered by</span><input name="orderedBy" value="' + esc(state.user.displayName || "") + '" /></label>' +
+        "</div>" +
+        '<label class="field"><span>Notes (optional)</span><textarea name="notes" rows="2" placeholder="Supplier, reference number, anything worth flagging"></textarea></label>' +
+        '<button type="button" class="btn btn-primary btn-block" data-action="submit-new-order">Save order</button>' +
+        '<button type="button" class="btn btn-ghost btn-block" data-action="cancel-new-order">Cancel</button>' +
+        "</div>";
+      return modalWrap(title, body);
+    }
+
+    function orderRow(o, isPending) {
+      return '<div class="row-card">' +
+        '<div style="flex:1"><div class="row-title">' + esc(o.itemLabel) + (o.quantity ? " × " + o.quantity : "") + '</div><div class="row-sub">' +
+        (o.itemType === "consumable" ? "Consumable" : "Equipment") +
+        (o.expectedDeliveryDate ? " · Expected " + fmtDate(o.expectedDeliveryDate) : "") +
+        (o.orderedBy ? " · Ordered by " + esc(o.orderedBy) : "") +
+        (o.notes ? " · " + esc(o.notes) : "") +
+        (!isPending ? " · " + (o.status === "arrived" ? "Arrived " + fmtDate((o.arrivedAt || "").slice(0, 10)) : "Cancelled") : "") +
+        "</div></div>" +
+        (isPending ?
+          '<div style="display:flex;gap:8px">' +
+          '<button class="btn btn-secondary btn-sm" data-action="mark-order-arrived" data-id="' + o.id + '">Mark arrived</button>' +
+          '<button class="btn btn-ghost btn-sm" data-action="cancel-order" data-id="' + o.id + '">' + (state.pendingDelete === o.id ? "Confirm cancel" : "Cancel") + "</button>" +
+          "</div>" : "") +
+        "</div>";
+    }
+
+    var body =
+      '<p class="muted" style="margin-top:0">Orders track consumables and equipment that have been requested from a supplier, so it\'s clear what\'s expected and when — separate from medication repeats, which are tracked on each medication directly.</p>' +
+      '<button class="btn btn-primary btn-block" data-action="new-order-form" style="margin-bottom:14px">' + icon("plus") + " New order</button>" +
+      '<h2 class="section-title">Pending (' + pending.length + ")</h2>" +
+      (pending.length ? pending.map(function (o) { return orderRow(o, true); }).join("") : '<p class="muted">No pending orders.</p>') +
+      '<div class="section-divider"></div>' +
+      '<h2 class="section-title">Recent history</h2>' +
+      (past.length ? past.map(function (o) { return orderRow(o, false); }).join("") : '<p class="muted">No past orders yet.</p>');
+    return modalWrap(title, body);
+  }
+
   /* ---------- clients ---------- */
 
   function renderClients() {
@@ -2175,12 +2235,14 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       "</div>"
     ) : "";
 
+    var pendingOrderCount = houseData().orders.filter(function (o) { return o.status === "pending" && o.itemType === "consumable"; }).length;
     return (
       '<div class="page-head-row"><h1 class="page-title">Consumables</h1>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<button class="btn btn-ghost" data-action="export-consumables">' + icon("clipboard") + " Export CSV</button>" +
       '<button class="btn btn-secondary" data-action="open-modal" data-modal="consumableStockCheck">' + icon("clipboard") + " Monthly stocktake</button>" +
       '<button class="btn btn-secondary" data-action="open-modal" data-modal="addConsumableDelivery">' + icon("truck") + " Log delivery</button>" +
+      '<button class="btn btn-secondary" data-action="open-orders" data-order-type="consumable">' + icon("clipboard") + " Orders" + (pendingOrderCount ? ' <span class="badge-count" style="margin-left:4px">' + pendingOrderCount + "</span>" : "") + "</button>" +
       '<button class="btn btn-primary" data-action="open-modal" data-modal="addConsumable">' + icon("plus") + " Add consumable</button></div></div>" +
       '<p class="page-sub">Client-funded consumables — pads, inserts, wipes, barrier cream, formula, PEG supplies, gloves and similar. Usage averages and reorder timing are calculated from monthly stocktakes.</p>' +
       '<div class="filter-row">' +
@@ -2207,7 +2269,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
 
     var rows = list.map(function (d) {
       return '<div class="row-card">' +
-        '<div><div class="row-title">' + esc(d.itemName) + '</div><div class="row-sub">' + esc(d.client) + "</div></div>" +
+        '<div><div class="row-title">' + esc(d.itemName) + '</div><div class="row-sub">' + esc(d.client) + (d.notes ? " · " + esc(d.notes) : "") + "</div></div>" +
         '<div class="row-mid">' + Number(d.quantity) + " " + esc(d.unit) + "</div>" +
         '<div class="row-mid">' + fmtDate(d.deliveryDate) + "</div>" +
         "</div>";
@@ -2268,10 +2330,12 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       return '<option value="' + s + '"' + (state.equipmentFilter === s ? " selected" : "") + ">" + s + "</option>";
     }).join("");
 
+    var pendingOrderCountEq = houseData().orders.filter(function (o) { return o.status === "pending" && o.itemType === "equipment"; }).length;
     return (
       '<div class="page-head-row"><h1 class="page-title">Equipment &amp; repairs</h1>' +
       '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
       '<button class="btn btn-ghost" data-action="export-equipment">' + icon("clipboard") + " Export CSV</button>" +
+      '<button class="btn btn-secondary" data-action="open-orders" data-order-type="equipment">' + icon("clipboard") + " Orders" + (pendingOrderCountEq ? ' <span class="badge-count" style="margin-left:4px">' + pendingOrderCountEq + "</span>" : "") + "</button>" +
       '<button class="btn btn-primary" data-action="open-modal" data-modal="addEquipment">' + icon("plus") + " Add equipment</button></div></div>" +
       '<p class="page-sub">Mobility aids and NDIS-funded equipment — track repair status so nothing sits stalled between provider, repairer and NDIS.</p>' +
       '<div class="filter-row">' +
@@ -2473,6 +2537,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (mod.type === "clientDetail") return renderClientDetailModal();
     if (mod.type === "serviceLog") return renderServiceLogModal();
     if (mod.type === "packDetail") return renderPackDetailModal();
+    if (mod.type === "orders") return renderOrdersModal();
     return "";
   }
 
@@ -2819,6 +2884,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (!h.consumables.length) {
       return modalWrap("Log delivery", '<p class="muted">Add a consumable first before logging a delivery.</p><button class="btn btn-primary" data-action="open-modal" data-modal="addConsumable">Add consumable</button>');
     }
+    var pendingOrders = h.orders.filter(function (o) { return o.status === "pending" && o.itemType === "consumable"; });
     var body =
       modalError() +
       '<div id="addConsumableDeliveryForm" class="stack">' +
@@ -2827,6 +2893,11 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<label class="field"><span>Quantity received *</span><input name="quantity" type="number" min="0" step="any" /></label>' +
       '<label class="field"><span>Delivery date *</span><input name="deliveryDate" type="date" value="' + todayISO() + '" /></label>' +
       "</div>" +
+      (pendingOrders.length ?
+        '<label class="field"><span>This delivers a pending order (optional)</span><select name="linkedOrderId"><option value="">Not linked to an order</option>' +
+        pendingOrders.map(function (o) { return '<option value="' + o.id + '">' + esc(o.itemLabel) + (o.expectedDeliveryDate ? " — expected " + fmtDate(o.expectedDeliveryDate) : "") + "</option>"; }).join("") +
+        "</select></label>" : "") +
+      '<label class="field"><span>Notes (optional)</span><textarea name="notes" rows="2" placeholder="e.g. delivered by driver, partial delivery, packaging condition"></textarea></label>' +
       '<button type="button" class="btn btn-primary btn-block" data-action="submit-add-consumable-delivery">Log delivery</button>' +
       "</div>";
     return modalWrap("Log consumable delivery", body);
@@ -3602,6 +3673,56 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
           addAudit(state.houseId, "Medication removed from Webster Pack", m.name + " unlinked from its Webster Pack.");
         });
         render();
+        break;
+      case "open-orders":
+        state.modal = { type: "orders", orderType: el.getAttribute("data-order-type") || "all", adding: false };
+        state.modalError = "";
+        render();
+        break;
+      case "new-order-form":
+        if (isSupportWorker()) break;
+        state.modal.adding = true;
+        state.modalError = "";
+        render();
+        break;
+      case "cancel-new-order":
+        state.modal.adding = false;
+        state.modalError = "";
+        render();
+        break;
+      case "submit-new-order":
+        if (isSupportWorker()) break;
+        doSubmitNewOrder();
+        break;
+      case "mark-order-arrived":
+        var arriveId = el.getAttribute("data-id");
+        mutate(function () {
+          var h = houseData();
+          var ord = h.orders.find(function (o) { return o.id === arriveId; });
+          if (!ord || ord.status !== "pending") return;
+          ord.status = "arrived";
+          ord.arrivedAt = new Date().toISOString();
+          addAudit(state.houseId, "Order arrived", ord.itemLabel + " (" + (ord.itemType === "consumable" ? "consumable" : "equipment") + ") marked arrived.");
+        });
+        render();
+        break;
+      case "cancel-order":
+        if (isSupportWorker()) break;
+        var cancelId = el.getAttribute("data-id");
+        if (state.pendingDelete === cancelId) {
+          mutate(function () {
+            var h = houseData();
+            var ord = h.orders.find(function (o) { return o.id === cancelId; });
+            if (!ord) return;
+            ord.status = "cancelled";
+            addAudit(state.houseId, "Order cancelled", ord.itemLabel + " order cancelled.");
+          });
+          state.pendingDelete = null;
+          render();
+        } else {
+          state.pendingDelete = cancelId;
+          render();
+        }
         break;
       case "delete-webster-pack":
         if (isSupportWorker()) break;
@@ -4470,6 +4591,35 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     render();
   }
 
+  function doSubmitNewOrder() {
+    var v = getFormValues("addOrderForm");
+    if (!v.itemLabel || !v.itemLabel.trim() || !v.itemType) {
+      state.modalError = "Please enter what was ordered and choose a type.";
+      render();
+      return;
+    }
+    mutate(function () {
+      var h = houseData();
+      var order = {
+        id: uid("ord"),
+        itemType: v.itemType,
+        itemLabel: v.itemLabel.trim(),
+        quantity: v.quantity ? Number(v.quantity) : null,
+        expectedDeliveryDate: v.expectedDeliveryDate || "",
+        orderedBy: (v.orderedBy || "").trim() || state.user.displayName || "",
+        notes: (v.notes || "").trim(),
+        status: "pending",
+        orderedAt: new Date().toISOString(),
+        arrivedAt: null
+      };
+      h.orders.push(order);
+      addAudit(state.houseId, "Order placed", order.itemLabel + " (" + (order.itemType === "consumable" ? "consumable" : "equipment") + ") ordered" + (order.expectedDeliveryDate ? ", expected " + fmtDate(order.expectedDeliveryDate) : "") + ".");
+    });
+    state.modal.adding = false;
+    state.modalError = "";
+    render();
+  }
+
   function doSubmitAddConsumableDelivery() {
     var v = getFormValues("addConsumableDeliveryForm");
     if (!v.itemId || !v.quantity || Number(v.quantity) <= 0 || !v.deliveryDate) {
@@ -4482,6 +4632,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       var item = h.consumables.find(function (c) { return c.id === v.itemId; });
       if (!item) return;
       var qty = Number(v.quantity) || 0;
+      var noteText = (v.notes || "").trim();
       h.consumableDeliveries.push({
         id: uid("cdel"),
         itemId: item.id,
@@ -4490,11 +4641,20 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         quantity: qty,
         unit: item.unit,
         deliveryDate: v.deliveryDate || todayISO(),
+        notes: noteText,
         createdAt: new Date().toISOString()
       });
       item.stock = currentConsumableStock(item) + qty;
       item.stockAsOfDate = v.deliveryDate || todayISO();
-      addAudit(state.houseId, "Consumable delivery received", "+" + qty + " " + item.unit + " of " + item.name + " (" + item.client + ") received.");
+      addAudit(state.houseId, "Consumable delivery received", "+" + qty + " " + item.unit + " of " + item.name + " (" + item.client + ") received." + (noteText ? " Note: " + noteText : ""));
+      if (v.linkedOrderId) {
+        var ord = h.orders.find(function (o) { return o.id === v.linkedOrderId; });
+        if (ord && ord.status === "pending") {
+          ord.status = "arrived";
+          ord.arrivedAt = new Date().toISOString();
+          addAudit(state.houseId, "Order arrived", "Order for " + ord.itemLabel + " marked arrived (delivery logged).");
+        }
+      }
     });
     state.modal = null;
     state.modalError = "";
