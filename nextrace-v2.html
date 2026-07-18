@@ -1447,6 +1447,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       (isOpsRole() ? '<button class="btn btn-secondary" data-action="back-to-ops-overview">' + icon("grid") + " Back to Operations Overview</button>" : (state.user.houses.length > 1 ? '<button class="btn btn-secondary" data-action="view-all-houses">' + icon("grid") + " All Houses overview</button>" : "")) +
       "</div>" +
       '<div class="house-grid">' + cards + "</div>" +
+      (isAdmin() ? '<div class="section-divider"></div><h2 class="section-title" style="color:#B02A2A">Danger zone</h2><button class="btn btn-ghost" style="color:#B02A2A" data-action="open-modal" data-modal="factoryReset">Clear all test data (all houses)</button>' : "") +
       '<div id="modalRoot"></div>' +
       "</div>" +
       "</div>"
@@ -2069,6 +2070,19 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<div class="section-divider"></div>' +
       '<button class="btn btn-ghost" data-action="delete-webster-pack" data-id="' + pack.id + '">' + (state.pendingDelete === pack.id ? "Confirm delete pack" : "Delete this Webster Pack") + "</button>";
     return modalWrap(pack.name, body);
+  }
+
+  function renderFactoryResetModal() {
+    var body =
+      modalError() +
+      '<p class="muted" style="margin-top:0"><strong>This permanently deletes everything</strong> in every house you have access to — clients, medications, consumables, equipment, Webster Packs, orders, delivery history, and the audit log itself. There is no undo.</p>' +
+      '<p class="muted">Only use this while testing, before any real client data is entered. Type <strong>CLEAR ALL DATA</strong> below to confirm.</p>' +
+      '<div class="form-grid">' +
+      '<label class="field"><span>Confirmation</span><input id="factoryResetConfirmText" placeholder="CLEAR ALL DATA" /></label>' +
+      "</div>" +
+      '<button type="button" class="btn btn-danger btn-block" data-action="confirm-factory-reset">Permanently clear all houses</button>' +
+      '<button type="button" class="btn btn-ghost btn-block" data-action="close-modal">Cancel</button>';
+    return modalWrap("Clear all test data", body);
   }
 
   function renderOrdersModal() {
@@ -2748,6 +2762,7 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (mod.type === "serviceLog") return renderServiceLogModal();
     if (mod.type === "packDetail") return renderPackDetailModal();
     if (mod.type === "orders") return renderOrdersModal();
+    if (mod.type === "factoryReset") return renderFactoryResetModal();
     return "";
   }
 
@@ -3935,6 +3950,16 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
         });
         render();
         break;
+      case "confirm-factory-reset":
+        if (!isAdmin()) break;
+        var resetConfirmEl = document.getElementById("factoryResetConfirmText");
+        if (!resetConfirmEl || resetConfirmEl.value.trim() !== "CLEAR ALL DATA") {
+          state.modalError = "Type CLEAR ALL DATA exactly (all capitals) to confirm.";
+          render();
+          break;
+        }
+        doFactoryReset();
+        break;
       case "open-orders":
         state.modal = { type: "orders", orderType: el.getAttribute("data-order-type") || "all", adding: false };
         state.modalError = "";
@@ -4880,6 +4905,22 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     render();
     await saveHouse(sourceHouseId);
     await saveHouse(targetHouseId);
+  }
+
+  async function doFactoryReset() {
+    var houseIds = state.user.houses || [];
+    houseIds.forEach(function (hid) {
+      var existingName = state.data[hid] ? state.data[hid].houseName : null;
+      state.data[hid] = defaultHouseData(hid);
+      if (existingName) state.data[hid].houseName = existingName;
+    });
+    state.modal = null;
+    state.modalError = "";
+    state.houseId = null;
+    render();
+    for (var i = 0; i < houseIds.length; i++) {
+      await saveHouse(houseIds[i]);
+    }
   }
 
   async function doPermanentlyDeleteClient(clientId) {
