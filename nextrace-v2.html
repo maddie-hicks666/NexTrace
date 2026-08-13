@@ -2968,8 +2968,9 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       '<div class="form-grid">' +
       '<label class="field"><span>Repeat start date *</span><input name="repeatStartDate" type="date" value="' + todayISO() + '" /></label>' +
       '<label class="field"><span>Repeat expiry date *</span><input name="repeatExpiryDate" type="date" /></label>' +
-      '<label class="field"><span>Repeats remaining *</span><input name="repeatsRemaining" type="number" min="0" step="1" /></label>' +
+      '<label class="field"><span>Repeats to add *</span><input name="repeatsRemaining" type="number" min="0" step="1" placeholder="e.g. 5" /></label>' +
       "</div>" +
+      '<p class="muted" style="margin-top:0">If this medication already has a repeat script on file, this tops up its remaining count rather than starting a separate one — the start/expiry dates you enter will update the existing script.</p>' +
       '<label class="field"><span>Attach script (optional, image or PDF, under 300KB)</span><input type="file" accept="image/*,.pdf" data-input="repeatAttachment" /></label>' +
       attachmentNote +
       '<button type="button" class="btn btn-primary btn-block" data-action="submit-add-repeat">Add repeat</button>' +
@@ -3755,7 +3756,13 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
     if (!el) return;
     var action = el.getAttribute("data-action");
 
-    if (action !== "delete-med" && action !== "delete-repeat" && action !== "delete-client" && action !== "delete-consumable" && action !== "delete-equipment") {
+    // Only keep a pending "confirm delete" state alive if this click is the
+    // second tap on that exact same item — any other click clears it. This is
+    // deliberately generic (keyed off data-id/data-entry-id matching
+    // state.pendingDelete) rather than a hardcoded action list, so any new
+    // two-tap confirm button works correctly without needing to be added here.
+    var pendingDeleteTarget = el.getAttribute("data-entry-id") || el.getAttribute("data-id");
+    if (!(pendingDeleteTarget && state.pendingDelete === pendingDeleteTarget)) {
       state.pendingDelete = null;
     }
 
@@ -4729,20 +4736,32 @@ svg { width: 18px; height: 18px; flex-shrink: 0; }
       var h = houseData();
       var med = h.meds.find(function (m) { return m.id === v.medId; });
       if (!med) return;
-      var rep = {
-        id: uid("rep"),
-        medId: med.id,
-        medName: med.name,
-        client: med.client,
-        house: state.houseId,
-        repeatStartDate: v.repeatStartDate || todayISO(),
-        repeatExpiryDate: v.repeatExpiryDate || "",
-        repeatsRemaining: Number(v.repeatsRemaining) || 0,
-        attachment: state.pendingRepeatAttachment || null,
-        createdAt: new Date().toISOString()
-      };
-      h.repeats.push(rep);
-      addAudit(state.houseId, "Repeat added", "Repeat script added for " + med.name + " (" + med.client + ")." + (rep.attachment ? " Script attached: " + rep.attachment.name + "." : ""));
+      var addedCount = Number(v.repeatsRemaining) || 0;
+      var existing = h.repeats.filter(function (r) { return r.medId === med.id; })
+        .sort(function (a, b) { return (b.createdAt || "").localeCompare(a.createdAt || ""); })[0];
+      if (existing) {
+        var priorRemaining = Number(existing.repeatsRemaining) || 0;
+        existing.repeatsRemaining = priorRemaining + addedCount;
+        existing.repeatStartDate = v.repeatStartDate || existing.repeatStartDate;
+        existing.repeatExpiryDate = v.repeatExpiryDate || existing.repeatExpiryDate;
+        if (state.pendingRepeatAttachment) existing.attachment = state.pendingRepeatAttachment;
+        addAudit(state.houseId, "Repeats topped up", addedCount + " repeat(s) added to " + med.name + " (" + med.client + ") — now " + existing.repeatsRemaining + " remaining, expiring " + fmtDate(existing.repeatExpiryDate) + "." + (state.pendingRepeatAttachment ? " Script attached: " + state.pendingRepeatAttachment.name + "." : ""));
+      } else {
+        var rep = {
+          id: uid("rep"),
+          medId: med.id,
+          medName: med.name,
+          client: med.client,
+          house: state.houseId,
+          repeatStartDate: v.repeatStartDate || todayISO(),
+          repeatExpiryDate: v.repeatExpiryDate || "",
+          repeatsRemaining: addedCount,
+          attachment: state.pendingRepeatAttachment || null,
+          createdAt: new Date().toISOString()
+        };
+        h.repeats.push(rep);
+        addAudit(state.houseId, "Repeat added", "Repeat script added for " + med.name + " (" + med.client + ")." + (rep.attachment ? " Script attached: " + rep.attachment.name + "." : ""));
+      }
     });
     state.modal = null;
     state.modalError = "";
